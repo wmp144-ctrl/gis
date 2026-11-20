@@ -66,7 +66,7 @@ fun RoundIconButton(
 ) {
     Box(
         modifier = modifier
-            .size(42.dp)
+            .size(44.dp)
             .clip(CircleShape)
             .background(background)
             .clickable(enabled = enabled, onClick = onClick),
@@ -76,7 +76,7 @@ fun RoundIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = if (enabled) tint else AtlasColors.TextMuted,
-            modifier = Modifier.size(21.dp),
+            modifier = Modifier.size(22.dp),
         )
     }
 }

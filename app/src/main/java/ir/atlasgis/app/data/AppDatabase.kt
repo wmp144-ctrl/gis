@@ -40,7 +40,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
                 vector_layers TEXT,
                 file_size INTEGER NOT NULL DEFAULT 0,
                 added_at INTEGER NOT NULL,
-                style_path TEXT
+                style_path TEXT,
+                style_preset TEXT
             )
             """.trimIndent(),
         )
@@ -85,6 +86,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE map_layers ADD COLUMN style_path TEXT")
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE map_layers ADD COLUMN style_preset TEXT")
         }
     }
 
@@ -233,6 +237,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         put("file_size", fileSizeBytes)
         put("added_at", addedAt)
         put("style_path", stylePath)
+        put("style_preset", stylePreset.key)
     }
 
     private fun Cursor.toLayer(): MapLayer {
@@ -268,6 +273,10 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
             stylePath = getColumnIndex("style_path")
                 .takeIf { it >= 0 && !isNull(it) }
                 ?.let { getString(it) },
+            stylePreset = getColumnIndex("style_preset")
+                .takeIf { it >= 0 && !isNull(it) }
+                ?.let { MapStylePreset.fromKey(getString(it)) }
+                ?: MapStylePreset.DEFAULT,
         )
     }
 
@@ -331,7 +340,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
 
     companion object {
         private const val NAME = "atlasgis.db"
-        private const val VERSION = 2
+        private const val VERSION = 3
 
         fun newId(): String = UUID.randomUUID().toString()
 

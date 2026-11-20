@@ -115,6 +115,10 @@ class MapLibrary(private val context: Context) {
         db.setLayerOpacity(layer.id, opacity)
     }
 
+    suspend fun setStylePreset(layer: MapLayer, preset: MapStylePreset) = withContext(Dispatchers.IO) {
+        if (layer.stylePreset != preset) db.upsertLayer(layer.copy(stylePreset = preset))
+    }
+
     suspend fun rename(layer: MapLayer, name: String) = withContext(Dispatchers.IO) {
         val trimmed = name.trim().take(80)
         if (trimmed.isNotEmpty()) db.upsertLayer(layer.copy(name = trimmed))

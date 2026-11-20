@@ -72,7 +72,11 @@ fun WaypointsSheet(
         contentColor = AtlasColors.TextPrimary,
         dragHandle = { BottomSheetDefaults.DragHandle(color = AtlasColors.Outline) },
     ) {
-        Column(Modifier.padding(horizontal = 18.dp)) {
+        Column(
+            Modifier
+                .fillMaxHeight(0.9f)
+                .padding(horizontal = 18.dp),
+        ) {
             SectionHeader(
                 title = "نقاط ذخیره‌شده",
                 subtitle = "${waypoints.size.toString().toPersianDigits()} نقطه",
@@ -103,21 +107,23 @@ fun WaypointsSheet(
             )
             Spacer(Modifier.height(10.dp))
             if (filtered.isEmpty()) {
-                Text(
-                    text = if (waypoints.isEmpty()) {
-                        "با نگه‌داشتن انگشت روی نقشه یا دکمه + یک نقطه بسازید."
-                    } else {
-                        "نقطه‌ای با این جست‌وجو پیدا نشد."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AtlasColors.TextMuted,
-                    modifier = Modifier.padding(vertical = 22.dp),
-                )
+                Box(Modifier.weight(1f)) {
+                    Text(
+                        text = if (waypoints.isEmpty()) {
+                            "با نگه‌داشتن انگشت روی نقشه یا دکمه + یک نقطه بسازید."
+                        } else {
+                            "نقطه‌ای با این جست‌وجو پیدا نشد."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AtlasColors.TextMuted,
+                        modifier = Modifier.padding(vertical = 22.dp),
+                    )
+                }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 26.dp),
-                    modifier = Modifier.heightIn(max = 480.dp),
+                    contentPadding = PaddingValues(bottom = 12.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
                     items(filtered, key = { it.id }) { waypoint ->
                         WaypointRow(
@@ -136,7 +142,7 @@ fun WaypointsSheet(
                 }
             }
             Row(
-                Modifier.fillMaxWidth().padding(bottom = 18.dp),
+                Modifier.fillMaxWidth().padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 TextButton(onClick = onFitAll) {
@@ -223,7 +229,11 @@ fun TracksSheet(
         contentColor = AtlasColors.TextPrimary,
         dragHandle = { BottomSheetDefaults.DragHandle(color = AtlasColors.Outline) },
     ) {
-        Column(Modifier.padding(horizontal = 18.dp)) {
+        Column(
+            Modifier
+                .fillMaxHeight(0.9f)
+                .padding(horizontal = 18.dp),
+        ) {
             SectionHeader(
                 title = "مسیرهای ثبت‌شده",
                 subtitle = "${tracks.size.toString().toPersianDigits()} مسیر · ${formatDistance(tracks.sumOf { it.distanceMeters })}",
@@ -247,17 +257,19 @@ fun TracksSheet(
             )
             Spacer(Modifier.height(4.dp))
             if (tracks.isEmpty()) {
-                Text(
-                    "هنوز مسیری ثبت نشده است. با دکمه «ثبت مسیر» شروع کنید.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AtlasColors.TextMuted,
-                    modifier = Modifier.padding(vertical = 22.dp),
-                )
+                Box(Modifier.weight(1f)) {
+                    Text(
+                        "هنوز مسیری ثبت نشده است. با دکمه «ثبت مسیر» شروع کنید.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AtlasColors.TextMuted,
+                        modifier = Modifier.padding(vertical = 22.dp),
+                    )
+                }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 26.dp),
-                    modifier = Modifier.heightIn(max = 480.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
                     items(tracks, key = { it.id }) { track ->
                         TrackRow(
@@ -324,7 +336,7 @@ private fun TrackRow(track: Track, onClick: () -> Unit, onDelete: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsSheet(
     settings: AppSettings,
@@ -347,6 +359,7 @@ fun SettingsSheet(
     ) {
         Column(
             Modifier
+                .fillMaxHeight(0.92f)
                 .padding(horizontal = 18.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 28.dp),
@@ -356,7 +369,10 @@ fun SettingsSheet(
 
             Text("قالب نمایش مختصات", style = MaterialTheme.typography.labelMedium, color = AtlasColors.TextSecondary)
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 CoordinateFormat.entries.forEach { format ->
                     val selected = settings.coordinateFormat == format
                     Text(
@@ -367,7 +383,7 @@ fun SettingsSheet(
                             .clip(RoundedCornerShape(50))
                             .background(if (selected) AtlasColors.Accent else AtlasColors.SurfaceElevated)
                             .clickable { onCoordinateFormat(format) }
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
                     )
                 }
             }

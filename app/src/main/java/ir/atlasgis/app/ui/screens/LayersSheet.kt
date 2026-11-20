@@ -2,6 +2,8 @@ package ir.atlasgis.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import ir.atlasgis.app.core.formatOpacity
 import ir.atlasgis.app.core.toPersianDigits
 import ir.atlasgis.app.data.MapLayer
+import ir.atlasgis.app.data.MapStylePreset
 import ir.atlasgis.app.data.TileFormat
 import ir.atlasgis.app.ui.components.GlassPanel
 import ir.atlasgis.app.ui.components.RoundIconButton
@@ -27,7 +30,7 @@ import ir.atlasgis.app.ui.components.StatusChip
 import ir.atlasgis.app.ui.theme.AtlasColors
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LayersSheet(
     layers: List<MapLayer>,
@@ -40,9 +43,11 @@ fun LayersSheet(
     onDelete: (MapLayer) -> Unit,
     onImportStyle: (MapLayer) -> Unit,
     onClearStyle: (MapLayer) -> Unit,
+    onStylePreset: (MapLayer, MapStylePreset) -> Unit,
 ) {
     var renameTarget by remember { mutableStateOf<MapLayer?>(null) }
     var deleteTarget by remember { mutableStateOf<MapLayer?>(null) }
+    var styleTarget by remember { mutableStateOf<MapLayer?>(null) }
     val ordered = remember(layers) { layers.sortedByDescending { it.sortOrder } }
     val totalBytes = remember(layers) { layers.sumOf { it.fileSizeBytes } }
 
@@ -52,7 +57,11 @@ fun LayersSheet(
         contentColor = AtlasColors.TextPrimary,
         dragHandle = { BottomSheetDefaults.DragHandle(color = AtlasColors.Outline) },
     ) {
-        Column(Modifier.padding(horizontal = 18.dp)) {
+        Column(
+            Modifier
+                .fillMaxHeight(0.92f)
+                .padding(horizontal = 18.dp),
+        ) {
             SectionHeader(
                 title = "نقشه‌های آفلاین",
                 subtitle = "${layers.size.toString().toPersianDigits()} فایل · ${formatBytes(totalBytes)}",
@@ -85,7 +94,7 @@ fun LayersSheet(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 26.dp),
-                    modifier = Modifier.heightIn(max = 520.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
                     items(ordered, key = { it.id }) { layer ->
                         LayerRow(
@@ -100,6 +109,7 @@ fun LayersSheet(
                             onDelete = { deleteTarget = layer },
                             onImportStyle = { onImportStyle(layer) },
                             onClearStyle = { onClearStyle(layer) },
+                            onPickStyle = { styleTarget = layer },
                         )
                     }
                 }
@@ -114,6 +124,17 @@ fun LayersSheet(
             onConfirm = { name ->
                 onRename(layer, name)
                 renameTarget = null
+            },
+        )
+    }
+
+    styleTarget?.let { layer ->
+        MapStylePresetDialog(
+            layer = layer,
+            onDismiss = { styleTarget = null },
+            onSelect = { preset ->
+                onStylePreset(layer, preset)
+                styleTarget = null
             },
         )
     }
@@ -142,6 +163,7 @@ fun LayersSheet(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LayerRow(
     layer: MapLayer,
@@ -155,6 +177,7 @@ private fun LayerRow(
     onDelete: () -> Unit,
     onImportStyle: () -> Unit,
     onClearStyle: () -> Unit,
+    onPickStyle: () -> Unit,
 ) {
     var sliderValue by remember(layer.id, layer.opacity) { mutableStateOf(layer.opacity) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -196,7 +219,11 @@ private fun LayerRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(3.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    // Wraps instead of pushing the switch off-screen on narrow phones.
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
                         StatusChip(
                             text = if (layer.format == TileFormat.VECTOR) "برداری" else "رستری",
                             color = if (layer.format == TileFormat.VECTOR) AtlasColors.Info else AtlasColors.Accent,
@@ -208,6 +235,12 @@ private fun LayerRow(
                             StatusChip(
                                 text = "استایل سفارشی",
                                 color = AtlasColors.Warning,
+                                background = Color.Transparent,
+                            )
+                        } else if (layer.format == TileFormat.VECTOR) {
+                            StatusChip(
+                                text = "استایل ${layer.stylePreset.label}",
+                                color = AtlasColors.TextSecondary,
                                 background = Color.Transparent,
                             )
                         }
@@ -285,6 +318,11 @@ private fun LayerRow(
                         )
                         if (layer.format == TileFormat.VECTOR) {
                             DropdownMenuItem(
+                                text = { Text("استایل نقشه", color = AtlasColors.TextPrimary) },
+                                leadingIcon = { Icon(Icons.Rounded.Palette, null, tint = AtlasColors.TextSecondary) },
+                                onClick = { menuOpen = false; onPickStyle() },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("بارگذاری استایل style.json", color = AtlasColors.TextPrimary) },
                                 leadingIcon = { Icon(Icons.Rounded.Style, null, tint = AtlasColors.TextSecondary) },
                                 onClick = { menuOpen = false; onImportStyle() },
@@ -317,6 +355,103 @@ private fun LayerRow(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Picks one of the built-in palettes for a vector archive. */
+@Composable
+private fun MapStylePresetDialog(
+    layer: MapLayer,
+    onDismiss: () -> Unit,
+    onSelect: (MapStylePreset) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AtlasColors.SurfaceElevated,
+        title = { Text("استایل نقشه", color = AtlasColors.TextPrimary) },
+        text = {
+            Column(
+                Modifier
+                    .widthIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    if (layer.hasCustomStyle) {
+                        "پالت رنگ برای «${layer.name}». با انتخاب هر استایل، استایل سفارشی فعلی حذف می‌شود."
+                    } else {
+                        "پالت رنگ برای «${layer.name}». لایه‌ها و داده‌های خود فایل تغییر نمی‌کند."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AtlasColors.TextMuted,
+                )
+                MapStylePreset.entries.forEach { preset ->
+                    val selected = layer.stylePreset == preset && !layer.hasCustomStyle
+                    StylePresetOption(
+                        preset = preset,
+                        selected = selected,
+                        onClick = { onSelect(preset) },
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("بستن", color = AtlasColors.TextSecondary) }
+        },
+    )
+}
+
+@Composable
+private fun StylePresetOption(
+    preset: MapStylePreset,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) AtlasColors.AccentSoft else AtlasColors.Surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Three-colour swatch previews the palette before it is applied.
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .width(46.dp)
+                .height(30.dp),
+        ) {
+            preset.preview.forEach { argb ->
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(Color(argb)),
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = preset.label,
+                style = MaterialTheme.typography.titleSmall,
+                color = AtlasColors.TextPrimary,
+            )
+            Text(
+                text = preset.description,
+                style = MaterialTheme.typography.labelSmall,
+                color = AtlasColors.TextMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (selected) {
+            Spacer(Modifier.width(6.dp))
+            Icon(Icons.Rounded.CheckCircle, contentDescription = "انتخاب‌شده", tint = AtlasColors.Accent, modifier = Modifier.size(19.dp))
         }
     }
 }

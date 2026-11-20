@@ -44,11 +44,18 @@ object MapStyleBuilder {
         val sources = JSONObject()
         val styleLayers = JSONArray()
 
+        // The topmost visible vector base decides the backdrop, so the colour behind
+        // the tiles matches the palette instead of a hard-coded night blue.
+        val preset = layers.filter { it.visible && it.format == TileFormat.VECTOR }
+            .maxByOrNull { it.sortOrder }
+            ?.stylePreset
+            ?: MapStylePreset.DEFAULT
+
         styleLayers.put(
             JSONObject()
                 .put("id", LAYER_BACKGROUND)
                 .put("type", "background")
-                .put("paint", JSONObject().put("background-color", "#0B1220")),
+                .put("paint", JSONObject().put("background-color", preset.palette.background)),
         )
 
         val ordered = layers.filter { it.visible }.sortedBy { it.sortOrder }
@@ -307,7 +314,9 @@ object MapStyleBuilder {
                 root, sources, layers, layer, sourceId, template,
             )
             if (!applied) {
-                val specs = VectorStyleHeuristics.layersFor(sourceId, layer.vectorLayers, layer.opacity)
+                val specs = VectorStyleHeuristics.layersFor(
+                    sourceId, layer.vectorLayers, layer.opacity, layer.stylePreset,
+                )
                 for (i in 0 until specs.length()) {
                     val spec = specs.optJSONObject(i) ?: continue
                     spec.put("id", "atlas-vec-${layer.id}-$i")

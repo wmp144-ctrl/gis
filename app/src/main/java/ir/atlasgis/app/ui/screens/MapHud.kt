@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -90,6 +91,7 @@ fun MapTopBar(
     layerCount: Int,
     onLayers: () -> Unit,
     onWaypoints: () -> Unit,
+    onTracks: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -115,7 +117,8 @@ fun MapTopBar(
                 )
             }
             RoundIconButton(Icons.Rounded.Layers, "لایه‌ها", onLayers)
-            RoundIconButton(Icons.Rounded.Search, "نقاط", onWaypoints)
+            RoundIconButton(Icons.Rounded.Place, "نقاط", onWaypoints)
+            RoundIconButton(Icons.Rounded.Route, "مسیرهای ثبت‌شده", onTracks)
             RoundIconButton(Icons.Rounded.Settings, "تنظیمات", onSettings)
         }
     }
@@ -276,7 +279,12 @@ fun MeasureCard(
             )
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HudActionButton("واگرد", Icons.Rounded.Undo, onUndo, enabled = state.points.isNotEmpty())
+                HudActionButton(
+                    "واگرد",
+                    Icons.AutoMirrored.Rounded.Undo,
+                    onUndo,
+                    enabled = state.points.isNotEmpty(),
+                )
                 HudActionButton("پاک‌کردن", Icons.Rounded.Delete, onClear, enabled = state.points.isNotEmpty())
                 Spacer(Modifier.weight(1f))
                 HudActionButton("پایان", Icons.Rounded.Check, onClose, accent = AtlasColors.Measure)
@@ -327,7 +335,7 @@ fun RecordingCard(
             Row {
                 StatBlock("مسافت", formatDistance(state.distanceMeters), Modifier.weight(1f))
                 StatBlock("سرعت", formatSpeed(state.currentSpeedMps), Modifier.weight(1f))
-                StatBlock("ارتفاع‌گرفتگی", formatDistance(state.ascentMeters), Modifier.weight(1f))
+                StatBlock("صعود", formatDistance(state.ascentMeters), Modifier.weight(1f))
                 StatBlock("نقاط", state.pointCount.toString().toPersianDigits(), Modifier.weight(1f))
             }
             Spacer(Modifier.height(10.dp))
@@ -382,7 +390,7 @@ fun WaypointCard(
                     )
                     Text(
                         text = "${categoryLabel(waypoint.category)}${
-                            distanceMeters?.let { " · ${formatDistance(it)} دورتر" } ?: ""
+                            distanceMeters?.let { " · ${formatDistance(it)} از موقعیت شما" } ?: ""
                         }",
                         style = MaterialTheme.typography.labelSmall,
                         color = AtlasColors.TextMuted,
@@ -421,13 +429,15 @@ fun HudActionButton(
 ) {
     Row(
         modifier = Modifier
+            .heightIn(min = 40.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(accent.copy(alpha = if (enabled) 0.12f else 0.05f))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 7.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = label, tint = if (enabled) accent else AtlasColors.TextMuted, modifier = Modifier.size(15.dp))
+        // Decorative: the label next to it is the accessible name.
+        Icon(icon, contentDescription = null, tint = if (enabled) accent else AtlasColors.TextMuted, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(5.dp))
         Text(
             text = label,
@@ -459,7 +469,7 @@ fun SegmentedChip(
                     .clip(RoundedCornerShape(50))
                     .background(if (isSelected) AtlasColors.Measure else Color.Transparent)
                     .clickable { onSelect(mode) }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
             )
         }
     }
@@ -522,7 +532,7 @@ fun CoordinateBar(
             Row(
                 modifier = Modifier
                     .clickable(onClick = onCycleFormat)
-                    .padding(horizontal = 11.dp, vertical = 6.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(

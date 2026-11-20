@@ -9,6 +9,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -63,6 +65,8 @@ fun MapScreen(viewModel: MapViewModel) {
     val pendingWaypoint by viewModel.pendingWaypoint.collectAsStateWithLifecycle()
     val editingWaypoint by viewModel.editingWaypoint.collectAsStateWithLifecycle()
     val showTracks by viewModel.showTracks.collectAsStateWithLifecycle()
+    val gps by viewModel.gps.collectAsStateWithLifecycle()
+    val cardsScroll = rememberScrollState()
 
     val recordingBadge by remember(viewModel) {
         viewModel.recording.map { RecordingBadge(it.active, it.paused) }.distinctUntilChanged()
@@ -167,6 +171,7 @@ fun MapScreen(viewModel: MapViewModel) {
                 layerCount = layers.size,
                 onLayers = { viewModel.openSheet(Sheet.LAYERS) },
                 onWaypoints = { viewModel.openSheet(Sheet.WAYPOINTS) },
+                onTracks = { viewModel.openSheet(Sheet.TRACKS) },
                 onSettings = { viewModel.openSheet(Sheet.SETTINGS) },
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
@@ -181,43 +186,54 @@ fun MapScreen(viewModel: MapViewModel) {
                     .padding(bottom = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                AnimatedVisibility(
-                    visible = selectedWaypoint != null,
-                    enter = expandVertically(),
-                    exit = shrinkVertically(),
+                // Cards stack up (waypoint + recording + measure). On short screens or
+                // in landscape the fixed part must not push the dock off-screen, so the
+                // card area scrolls inside a bounded height.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(cardsScroll),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    selectedWaypoint?.let { waypoint ->
-                        WaypointCardLive(
-                            viewModel = viewModel,
-                            waypoint = waypoint,
-                            gpsFlow = viewModel.gps,
-                            onClose = { viewModel.selectWaypoint(null) },
-                            onEdit = { viewModel.startEditingWaypoint(waypoint) },
-                            onDelete = { deleteWaypointTarget = waypoint },
-                            onCenter = { viewModel.showWaypointOnMap(waypoint) },
+                    AnimatedVisibility(
+                        visible = selectedWaypoint != null,
+                        enter = expandVertically(),
+                        exit = shrinkVertically(),
+                    ) {
+                        selectedWaypoint?.let { waypoint ->
+                            WaypointCardLive(
+                                viewModel = viewModel,
+                                waypoint = waypoint,
+                                gpsFlow = viewModel.gps,
+                                onClose = { viewModel.selectWaypoint(null) },
+                                onEdit = { viewModel.startEditingWaypoint(waypoint) },
+                                onDelete = { deleteWaypointTarget = waypoint },
+                                onCenter = { viewModel.showWaypointOnMap(waypoint) },
+                            )
+                        }
+                    }
+
+                    RecordingHud(
+                        stateFlow = viewModel.recording,
+                        onPause = viewModel::pauseRecording,
+                        onResume = viewModel::resumeRecording,
+                        onStop = viewModel::stopRecording,
+                    )
+
+                    AnimatedVisibility(
+                        visible = measure.active,
+                        enter = expandVertically(),
+                        exit = shrinkVertically(),
+                    ) {
+                        MeasureCard(
+                            state = measure,
+                            onModeChange = viewModel::setMeasureMode,
+                            onUndo = viewModel::undoMeasurePoint,
+                            onClear = viewModel::clearMeasure,
+                            onClose = viewModel::stopMeasure,
                         )
                     }
-                }
-
-                RecordingHud(
-                    stateFlow = viewModel.recording,
-                    onPause = viewModel::pauseRecording,
-                    onResume = viewModel::resumeRecording,
-                    onStop = viewModel::stopRecording,
-                )
-
-                AnimatedVisibility(
-                    visible = measure.active,
-                    enter = expandVertically(),
-                    exit = shrinkVertically(),
-                ) {
-                    MeasureCard(
-                        state = measure,
-                        onModeChange = viewModel::setMeasureMode,
-                        onUndo = viewModel::undoMeasurePoint,
-                        onClear = viewModel::clearMeasure,
-                        onClose = viewModel::stopMeasure,
-                    )
                 }
 
                 Row(
@@ -252,6 +268,17 @@ fun MapScreen(viewModel: MapViewModel) {
                             onCycleFormat = viewModel::cycleCoordinateFormat,
                         )
                     }
+                }
+
+                // Snackbars live in the sheet stack so they never cover the dock.
+                SnackbarHost(hostState = snackbarHostState) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        containerColor = AtlasColors.SurfaceElevated,
+                        contentColor = AtlasColors.TextPrimary,
+                        actionColor = AtlasColors.Accent,
+                        shape = RoundedCornerShape(14.dp),
+                    )
                 }
 
                 BottomDock(
@@ -294,7 +321,10 @@ fun MapScreen(viewModel: MapViewModel) {
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 70.dp),
             ) {
-                EmptyMapsCard(onImport = { mapPicker.launch(arrayOf("*/*")) })
+                EmptyMapsCard(
+                    onImport = { mapPicker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.padding(bottom = if (locationGranted) 0.dp else 160.dp),
+                )
             }
         }
 
@@ -316,21 +346,6 @@ fun MapScreen(viewModel: MapViewModel) {
             }
         }
 
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 108.dp, start = 16.dp, end = 16.dp),
-        ) { data ->
-            Snackbar(
-                snackbarData = data,
-                containerColor = AtlasColors.SurfaceElevated,
-                contentColor = AtlasColors.TextPrimary,
-                actionColor = AtlasColors.Accent,
-                shape = RoundedCornerShape(14.dp),
-            )
-        }
     }
 
     // ------------------------------------------------------------------ sheets
@@ -350,11 +365,12 @@ fun MapScreen(viewModel: MapViewModel) {
                 stylePicker.launch(arrayOf("*/*"))
             },
             onClearStyle = viewModel::clearLayerStyle,
+            onStylePreset = viewModel::setLayerStylePreset,
         )
 
         Sheet.WAYPOINTS -> WaypointsSheet(
             waypoints = waypoints,
-            gps = null,
+            gps = gps,
             onDismiss = viewModel::closeSheet,
             onAddAtCenter = {
                 val center = controller.center()
@@ -399,7 +415,10 @@ fun MapScreen(viewModel: MapViewModel) {
             onKeepScreenOn = viewModel::setKeepScreenOn,
             onScaleBar = viewModel::setShowScaleBar,
             onCoordinateBar = viewModel::setShowCoordinateBar,
-            onGoTo = { showGoToDialog = true },
+            onGoTo = {
+                viewModel.closeSheet()
+                showGoToDialog = true
+            },
         )
 
         Sheet.NONE -> Unit

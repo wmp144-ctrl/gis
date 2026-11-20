@@ -8,27 +8,40 @@ import org.json.JSONObject
  * Vector MBTiles carry no symbology, only layer names. These rules cover the common
  * schemas (OpenMapTiles, Mapbox Streets, Shortbread) so an imported archive renders
  * as a readable map without shipping a hand-written style for every provider.
+ *
+ * Every colour comes from a [MapStylePreset], so the same archive can be painted as
+ * a night, daylight, outdoor or high-contrast map.
  */
 internal object VectorStyleHeuristics {
 
-    private const val ACCENT = "#3ED598"
-
-    fun layersFor(sourceId: String, sourceLayers: List<String>, opacity: Float): JSONArray {
+    fun layersFor(
+        sourceId: String,
+        sourceLayers: List<String>,
+        opacity: Float,
+        preset: MapStylePreset = MapStylePreset.DEFAULT,
+    ): JSONArray {
+        val palette = preset.palette
         val result = JSONArray()
         val names = sourceLayers.ifEmpty { listOf("water", "landuse", "transportation", "building", "place") }
         for (name in names) {
             when (classify(name)) {
-                Kind.WATER -> result.put(fill(sourceId, name, waterColor(name), opacity))
+                Kind.WATER -> result.put(
+                    fill(sourceId, name, waterColor(name, palette), opacity, outline = palette.waterDeep),
+                )
                 Kind.WATERWAY -> result.put(
                     line(
-                        sourceId, name, "#2C6E9B", opacity,
+                        sourceId, name, palette.waterway, opacity,
                         width = zoomInterpolate(6 to 0.4, 12 to 1.6, 16 to 3.2, 20 to 7.0),
                     ),
                 )
-                Kind.GREEN -> result.put(fill(sourceId, name, greenColor(name), opacity * 0.92f))
+                Kind.GREEN -> result.put(
+                    fill(sourceId, name, greenColor(name, palette), opacity * 0.92f),
+                )
                 Kind.BUILDING -> result.put(
-                    fill(sourceId, name, "#26313F", opacity * 0.95f, minZoom = 13)
-                        .put("paint", fillPaint("#26313F", opacity * 0.95f).put("fill-outline-color", "#33445A")),
+                    fill(
+                        sourceId, name, palette.building, opacity * 0.95f,
+                        minZoom = 13, outline = palette.buildingOutline,
+                    ),
                 )
                 Kind.ROAD -> {
                     result.put(
@@ -44,42 +57,29 @@ internal object VectorStyleHeuristics {
                             .put(
                                 "paint",
                                 JSONObject()
-                                    .put("line-color", "#0A111C")
-                                    .put("line-opacity", (opacity * 0.55f).toDouble())
+                                    .put("line-color", palette.roadCasing)
+                                    .put("line-opacity", (opacity * 0.9f).toDouble())
                                     .put(
                                         "line-width",
-                                        zoomInterpolate(8 to 1.2, 12 to 3.0, 15 to 9.0, 18 to 22.0),
+                                        zoomInterpolate(8 to 2.0, 12 to 4.2, 15 to 10.5, 18 to 23.0),
                                     ),
                             ),
                     )
-                    result.put(majorRoadLayer(sourceId, name, opacity))
+                    result.put(majorRoadLayer(sourceId, name, opacity, palette))
                 }
                 Kind.RAIL -> result.put(
                     line(
-                        sourceId, name, "#64748B", opacity,
+                        sourceId, name, palette.rail, opacity,
                         width = zoomInterpolate(10 to 0.6, 14 to 1.6, 18 to 3.0),
-                    ).put(
-                        "paint",
-                        JSONObject()
-                            .put("line-color", "#64748B")
-                            .put("line-opacity", (opacity * 0.9f).toDouble())
-                            .put("line-width", zoomInterpolate(10 to 0.6, 14 to 1.6, 18 to 3.0))
-                            .put("line-dasharray", JSONArray().put(3).put(2)),
+                        dash = listOf(3, 2),
                     ),
                 )
                 Kind.BOUNDARY -> result.put(
-                    JSONObject()
-                        .put("type", "line")
-                        .put("source", sourceId)
-                        .put("source-layer", name)
-                        .put(
-                            "paint",
-                            JSONObject()
-                                .put("line-color", "#5E7896")
-                                .put("line-opacity", (opacity * 0.8f).toDouble())
-                                .put("line-width", 1.1)
-                                .put("line-dasharray", JSONArray().put(4).put(2)),
-                        ),
+                    line(
+                        sourceId, name, palette.boundary, opacity * 0.8f,
+                        width = 1.1,
+                        dash = listOf(4, 2),
+                    ),
                 )
                 Kind.POI -> result.put(
                     JSONObject()
@@ -91,8 +91,10 @@ internal object VectorStyleHeuristics {
                             "paint",
                             JSONObject()
                                 .put("circle-radius", zoomInterpolate(9 to 1.6, 14 to 3.2, 18 to 4.5))
-                                .put("circle-color", ACCENT)
-                                .put("circle-opacity", (opacity * 0.75f).toDouble()),
+                                .put("circle-color", palette.poi)
+                                .put("circle-opacity", (opacity * 0.9f).toDouble())
+                                .put("circle-stroke-width", 1.0)
+                                .put("circle-stroke-color", palette.background),
                         ),
                 )
                 Kind.NONE -> Unit
@@ -102,10 +104,10 @@ internal object VectorStyleHeuristics {
             // Unknown schema: render every layer as a neutral area plus outline so the
             // archive is still explorable.
             for (name in names) {
-                result.put(fill(sourceId, name, "#1B2A3B", opacity * 0.9f))
+                result.put(fill(sourceId, name, palette.unknownLand, opacity * 0.9f))
                 result.put(
                     line(
-                        sourceId, name, "#3A4C63", opacity * 0.8f,
+                        sourceId, name, palette.unknownOutline, opacity * 0.8f,
                         width = zoomInterpolate(8 to 0.4, 14 to 1.0),
                     ),
                 )
@@ -140,14 +142,14 @@ internal object VectorStyleHeuristics {
         }
     }
 
-    private fun waterColor(name: String): String =
-        if (name.contains("ocean") || name.contains("sea")) "#0F3350" else "#123A57"
+    private fun waterColor(name: String, palette: MapPalette): String =
+        if (name.contains("ocean") || name.contains("sea")) palette.waterDeep else palette.water
 
-    private fun greenColor(name: String): String = when {
-        name.contains("wood") || name.contains("forest") -> "#12301F"
-        name.contains("park") || name.contains("grass") -> "#1B4A31"
-        name.contains("glacier") || name.contains("ice") -> "#2A4356"
-        else -> "#163327"
+    private fun greenColor(name: String, palette: MapPalette): String = when {
+        name.contains("wood") || name.contains("forest") -> palette.forest
+        name.contains("park") || name.contains("grass") -> palette.park
+        name.contains("glacier") || name.contains("ice") -> palette.ice
+        else -> palette.green
     }
 
     private fun fill(
@@ -156,12 +158,15 @@ internal object VectorStyleHeuristics {
         color: String,
         opacity: Float,
         minZoom: Int? = null,
+        outline: String? = null,
     ): JSONObject {
+        val paint = fillPaint(color, opacity)
+        if (outline != null) paint.put("fill-outline-color", outline)
         val layer = JSONObject()
             .put("type", "fill")
             .put("source", sourceId)
             .put("source-layer", sourceLayer)
-            .put("paint", fillPaint(color, opacity))
+            .put("paint", paint)
         if (minZoom != null) layer.put("minzoom", minZoom)
         return layer
     }
@@ -175,24 +180,36 @@ internal object VectorStyleHeuristics {
         sourceLayer: String,
         color: String,
         opacity: Float,
-        width: JSONArray,
-    ): JSONObject = JSONObject()
-        .put("type", "line")
-        .put("source", sourceId)
-        .put("source-layer", sourceLayer)
-        .put(
-            "layout",
-            JSONObject().put("line-cap", "round").put("line-join", "round"),
-        )
-        .put(
-            "paint",
-            JSONObject()
-                .put("line-color", color)
-                .put("line-opacity", opacity.coerceIn(0.05f, 1.0f).toDouble())
-                .put("line-width", width),
-        )
+        width: Any,
+        dash: List<Int>? = null,
+    ): JSONObject {
+        val paint = JSONObject()
+            .put("line-color", color)
+            .put("line-opacity", opacity.coerceIn(0.05f, 1.0f).toDouble())
+            .put("line-width", width)
+        if (dash != null) {
+            val array = JSONArray()
+            dash.forEach { array.put(it) }
+            paint.put("line-dasharray", array)
+        }
+        return JSONObject()
+            .put("type", "line")
+            .put("source", sourceId)
+            .put("source-layer", sourceLayer)
+            .put(
+                "layout",
+                JSONObject().put("line-cap", "round").put("line-join", "round"),
+            )
+            .put("paint", paint)
+    }
 
-    private fun majorRoadLayer(sourceId: String, sourceLayer: String, opacity: Float): JSONObject {
+    private fun majorRoadLayer(
+        sourceId: String,
+        sourceLayer: String,
+        opacity: Float,
+        palette: MapPalette,
+    ): JSONObject {
+        // `class` (OpenMapTiles / Mapbox) and `kind` (Shortbread) are both common.
         val classColor = JSONArray()
             .put("match")
             .put(
@@ -202,15 +219,15 @@ internal object VectorStyleHeuristics {
                     .put(JSONArray().put("get").put("kind"))
                     .put(""),
             )
-            .put("motorway").put("#F0B967")
-            .put("trunk").put("#E3AE6A")
-            .put("primary").put("#C9D6E4")
-            .put("secondary").put("#B0C0D2")
-            .put("tertiary").put("#9FB0C4")
-            .put("minor").put("#8FA2B8")
-            .put("service").put("#6F7F93")
-            .put("track").put("#6F7F93")
-            .put("#8FA2B8")
+            .put("motorway").put(palette.roadMotorway)
+            .put("trunk").put(palette.roadTrunk)
+            .put("primary").put(palette.roadPrimary)
+            .put("secondary").put(palette.roadSecondary)
+            .put("tertiary").put(palette.roadTertiary)
+            .put("minor").put(palette.roadMinor)
+            .put("service").put(palette.roadService)
+            .put("track").put(palette.roadService)
+            .put(palette.roadMinor)
 
         return JSONObject()
             .put("type", "line")
@@ -225,7 +242,7 @@ internal object VectorStyleHeuristics {
                 "paint",
                 JSONObject()
                     .put("line-color", classColor)
-                    .put("line-opacity", (opacity * 0.95f).toDouble())
+                    .put("line-opacity", (opacity * 0.98f).toDouble())
                     .put("line-width", zoomInterpolate(8 to 0.7, 12 to 2.0, 15 to 6.0, 18 to 15.0)),
             )
     }

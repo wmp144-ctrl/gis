@@ -24,6 +24,8 @@ data class MapLayer(
     val addedAt: Long,
     /** Absolute path of a user supplied style.json, applied instead of the auto style. */
     val stylePath: String? = null,
+    /** Palette used by the automatic style for vector archives. */
+    val stylePreset: MapStylePreset = MapStylePreset.DEFAULT,
 ) {
     val zoomLabel: String get() = "z$minZoom–$maxZoom"
     val hasCustomStyle: Boolean get() = stylePath != null

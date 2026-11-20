@@ -109,45 +109,46 @@ fun WaypointEditorDialog(
     )
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun FlowRowCategories(
     selected: WaypointCategory,
     onSelect: (WaypointCategory) -> Unit,
 ) {
-    // Two rows of chips keeps it compact inside the dialog on small screens.
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        WaypointCategory.entries.chunked(4).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                row.forEach { category ->
-                    val isSelected = category == selected
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(
-                                if (isSelected) {
-                                    categoryColor(category).copy(alpha = 0.2f)
-                                } else {
-                                    AtlasColors.Surface
-                                },
-                            )
-                            .clickable { onSelect(category) }
-                            .padding(horizontal = 9.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = categoryIcon(category),
-                            contentDescription = null,
-                            tint = if (isSelected) categoryColor(category) else AtlasColors.TextMuted,
-                            modifier = Modifier.size(13.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = categoryLabel(category),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isSelected) categoryColor(category) else AtlasColors.TextSecondary,
-                        )
-                    }
-                }
+    // Wrapping chips stay inside the dialog on narrow phones and at large font scales.
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        maxItemsInEachRow = 4,
+    ) {
+        WaypointCategory.entries.forEach { category ->
+            val isSelected = category == selected
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        if (isSelected) {
+                            categoryColor(category).copy(alpha = 0.2f)
+                        } else {
+                            AtlasColors.Surface
+                        },
+                    )
+                    .clickable { onSelect(category) }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = categoryIcon(category),
+                    contentDescription = null,
+                    tint = if (isSelected) categoryColor(category) else AtlasColors.TextMuted,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = categoryLabel(category),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isSelected) categoryColor(category) else AtlasColors.TextSecondary,
+                )
             }
         }
     }

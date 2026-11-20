@@ -16,6 +16,7 @@ import ir.atlasgis.app.data.GpsFix
 import ir.atlasgis.app.data.MapLayer
 import ir.atlasgis.app.data.MapLibrary
 import ir.atlasgis.app.data.MapStyleBuilder
+import ir.atlasgis.app.data.MapStylePreset
 import ir.atlasgis.app.data.MeasureMode
 import ir.atlasgis.app.data.OverlayGeoJson
 import ir.atlasgis.app.data.RecordingState
@@ -172,7 +173,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             current.forEach { layer ->
                 append(layer.id).append(':').append(layer.visible).append(':')
                     .append(layer.opacity).append(':').append(layer.sortOrder).append(':')
-                    .append(layer.stylePath ?: "-").append(';')
+                    .append(layer.stylePath ?: "-").append(':')
+                    .append(layer.stylePreset.key).append(';')
             }
         }
         if (!force && key == lastStyleKey) return
@@ -271,6 +273,18 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     _importing.value = null
                     _messages.tryEmit(error.message ?: "بارگذاری استایل ناموفق بود")
                 }
+        }
+    }
+
+    fun setLayerStylePreset(layer: MapLayer, preset: MapStylePreset) {
+        viewModelScope.launch {
+            // Picking a built-in palette means the user wants the automatic style,
+            // so a custom style.json that would hide it is detached in the same step.
+            if (layer.hasCustomStyle) library.clearStyle(layer)
+            library.setStylePreset(layer, preset)
+            _layers.value = library.layers()
+            ensureStyle(force = true)
+            _messages.tryEmit("استایل «${preset.label}» اعمال شد")
         }
     }
 

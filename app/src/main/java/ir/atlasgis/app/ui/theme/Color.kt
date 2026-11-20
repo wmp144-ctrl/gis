@@ -21,7 +21,9 @@ object AtlasColors {
     val OnAccent = Color(0xFF04231A)
     val TextPrimary = Color(0xFFE9F1FA)
     val TextSecondary = Color(0xFF93A4BC)
-    val TextMuted = Color(0xFF64758D)
+    // Lightened from #64758D: the old value sat at ~4.4:1 on the panel colour, just
+    // under the 4.5:1 WCAG AA minimum for the 11sp labels it is used for.
+    val TextMuted = Color(0xFF8497AF)
 
     val Danger = Color(0xFFFF6B6B)
     val Warning = Color(0xFFFFC15E)
