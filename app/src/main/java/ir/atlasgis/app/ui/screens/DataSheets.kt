@@ -235,9 +235,16 @@ fun TracksSheet(
     onShowTracksChange: (Boolean) -> Unit,
     onShow: (Track) -> Unit,
     onDelete: (Track) -> Unit,
-    onExport: () -> Unit,
+    onRename: (Track, String) -> Unit,
+    onExportAll: (Boolean) -> Unit,
+    onExportTrack: (Track, Boolean) -> Unit,
     onImport: () -> Unit,
 ) {
+    var detail by remember { mutableStateOf<Track?>(null) }
+    var renameTarget by remember { mutableStateOf<Track?>(null) }
+    var deleteTarget by remember { mutableStateOf<Track?>(null) }
+    var exportMenuOpen by remember { mutableStateOf(false) }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = AtlasColors.Surface,
@@ -257,8 +264,24 @@ fun TracksSheet(
                         IconButton(onClick = onImport) {
                             Icon(Icons.Rounded.FileDownload, "ورود فایل", tint = AtlasColors.TextSecondary)
                         }
-                        IconButton(onClick = onExport) {
-                            Icon(Icons.Rounded.FileUpload, "خروجی GPX", tint = AtlasColors.TextSecondary)
+                        Box {
+                            IconButton(onClick = { exportMenuOpen = true }) {
+                                Icon(Icons.Rounded.FileUpload, "خروجی فایل", tint = AtlasColors.TextSecondary)
+                            }
+                            DropdownMenu(
+                                expanded = exportMenuOpen,
+                                onDismissRequest = { exportMenuOpen = false },
+                                containerColor = AtlasColors.SurfaceElevated,
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("خروجی GPX همه مسیرها", color = AtlasColors.TextPrimary) },
+                                    onClick = { exportMenuOpen = false; onExportAll(true) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("خروجی GeoJSON همه مسیرها", color = AtlasColors.TextPrimary) },
+                                    onClick = { exportMenuOpen = false; onExportAll(false) },
+                                )
+                            }
                         }
                     }
                 },
@@ -289,18 +312,63 @@ fun TracksSheet(
                     items(tracks, key = { it.id }) { track ->
                         TrackRow(
                             track = track,
-                            onClick = { onShow(track) },
-                            onDelete = { onDelete(track) },
+                            onClick = { detail = track },
                         )
                     }
                 }
             }
         }
     }
+
+    detail?.let { track ->
+        TrackDetailDialog(
+            track = track,
+            onDismiss = { detail = null },
+            onShow = {
+                detail = null
+                onShow(track)
+            },
+            onRename = {
+                detail = null
+                renameTarget = track
+            },
+            onDelete = {
+                detail = null
+                deleteTarget = track
+            },
+            onExport = { gpx ->
+                detail = null
+                onExportTrack(track, gpx)
+            },
+        )
+    }
+
+    renameTarget?.let { track ->
+        RenameTrackDialog(
+            initialName = track.name,
+            onDismiss = { renameTarget = null },
+            onConfirm = { name ->
+                onRename(track, name)
+                renameTarget = null
+            },
+        )
+    }
+
+    deleteTarget?.let { track ->
+        DeleteConfirmDialog(
+            title = "حذف مسیر",
+            message = "مسیر «${track.name}» با ${track.points.size.toString().toPersianDigits()} نقطه حذف شود؟ این کار قابل بازگشت نیست.",
+            onDismiss = { deleteTarget = null },
+            onConfirm = {
+                onDelete(track)
+                deleteTarget = null
+            },
+        )
+    }
 }
 
 @Composable
-private fun TrackRow(track: Track, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun TrackRow(track: Track, onClick: () -> Unit) {
     val date = remember(track.startedAt) {
         SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(track.startedAt))
     }
@@ -346,9 +414,115 @@ private fun TrackRow(track: Track, onClick: () -> Unit, onDelete: () -> Unit) {
                     )
                 }
             }
-            RoundIconButton(Icons.Rounded.Delete, "حذف مسیر", onDelete, tint = AtlasColors.TextMuted)
+            Icon(
+                Icons.Rounded.ChevronLeft,
+                contentDescription = null,
+                tint = AtlasColors.TextMuted,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
+}
+
+/** Full details for one saved track: stats, map preview and file operations. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun TrackDetailDialog(
+    track: Track,
+    onDismiss: () -> Unit,
+    onShow: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onExport: (Boolean) -> Unit,
+) {
+    val date = remember(track.startedAt) {
+        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(track.startedAt))
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AtlasColors.SurfaceElevated,
+        title = { Text(track.name, color = AtlasColors.TextPrimary) },
+        text = {
+            Column(
+                Modifier
+                    .widthIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    "شروع: $date · ${track.points.size.toString().toPersianDigits()} نقطه ثبت‌شده",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AtlasColors.TextMuted,
+                )
+                Spacer(Modifier.height(12.dp))
+                TrackStatRow("مسافت", formatDistance(track.distanceMeters))
+                TrackStatRow("مدت", formatDuration(track.durationSeconds))
+                TrackStatRow("سرعت بیشینه", formatSpeed(track.maxSpeedMps))
+                TrackStatRow("صعود", formatDistance(track.ascentMeters))
+                TrackStatRow("فرود", formatDistance(track.descentMeters))
+                Spacer(Modifier.height(14.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    HudActionButton("خروجی GPX", Icons.Rounded.FileUpload, { onExport(true) })
+                    HudActionButton("خروجی GeoJSON", Icons.Rounded.DataObject, { onExport(false) })
+                    HudActionButton("تغییر نام", Icons.Rounded.Edit, onRename)
+                    HudActionButton("حذف", Icons.Rounded.Delete, onDelete, accent = AtlasColors.Danger)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onShow) { Text("نمایش روی نقشه", color = AtlasColors.Accent) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("بستن", color = AtlasColors.TextSecondary) }
+        },
+    )
+}
+
+@Composable
+private fun TrackStatRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = AtlasColors.TextMuted,
+            modifier = Modifier.weight(1f),
+        )
+        Text(value, style = MaterialTheme.typography.titleSmall, color = AtlasColors.TextPrimary)
+    }
+}
+
+@Composable
+private fun RenameTrackDialog(
+    initialName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AtlasColors.SurfaceElevated,
+        title = { Text("نام مسیر", color = AtlasColors.TextPrimary) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(80) },
+                singleLine = true,
+                colors = atlasTextFieldColors(),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(text) }, enabled = text.isNotBlank()) {
+                Text("ذخیره", color = AtlasColors.Accent)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("انصراف", color = AtlasColors.TextSecondary) }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

@@ -245,6 +245,7 @@ fun RecordingCard(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
+    onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
@@ -276,6 +277,12 @@ fun RecordingCard(
                     style = MaterialTheme.typography.titleMedium,
                     color = AtlasColors.TextPrimary,
                 )
+                RoundIconButton(
+                    icon = Icons.Rounded.Close,
+                    contentDescription = "بستن کارت؛ ضبط ادامه پیدا می‌کند",
+                    onClick = onCollapse,
+                    tint = AtlasColors.TextSecondary,
+                )
             }
             Spacer(Modifier.height(10.dp))
             Row {
@@ -294,6 +301,52 @@ fun RecordingCard(
                 Spacer(Modifier.weight(1f))
                 HudActionButton("پایان و ذخیره", Icons.Rounded.Check, onStop, accent = AtlasColors.Track)
             }
+        }
+    }
+}
+
+@Composable
+fun RecordingMiniBar(
+    state: RecordingState,
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    GlassPanel(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        borderColor = AtlasColors.Track.copy(alpha = 0.5f),
+    ) {
+        Row(
+            modifier = Modifier
+                .clickable(onClick = onExpand)
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(if (state.paused) AtlasColors.Warning else AtlasColors.Danger),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (state.paused) "ثبت مسیر متوقف است" else "در حال ثبت مسیر",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (state.paused) AtlasColors.Warning else AtlasColors.Track,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "${formatDistance(state.distanceMeters)} · ${formatDuration(state.movingSeconds)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = AtlasColors.TextSecondary,
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Rounded.KeyboardArrowUp,
+                contentDescription = "نمایش کارت ثبت مسیر",
+                tint = AtlasColors.TextMuted,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }

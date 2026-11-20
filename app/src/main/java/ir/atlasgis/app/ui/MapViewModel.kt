@@ -617,6 +617,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun renameTrack(track: Track, name: String) {
+        val trimmed = name.trim().take(80)
+        if (trimmed.isEmpty() || trimmed == track.name) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { db.upsertTrack(track.copy(name = trimmed)) }
+            _tracks.value = withContext(Dispatchers.IO) { db.readTracks() }
+            _messages.tryEmit("نام مسیر ذخیره شد")
+        }
+    }
+
     fun deleteTrack(id: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { db.deleteTrack(id) }
@@ -704,10 +714,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         ExportKind.TRACKS_GEOJSON -> GeoFileCodec.tracksToGeoJson(_tracks.value)
     }
 
-    fun writeExport(uri: Uri, kind: ExportKind) {
+    /** Content of a single saved track, used by the per-track export actions. */
+    fun exportTrackContent(track: Track, gpx: Boolean): String =
+        if (gpx) GeoFileCodec.toGpx(emptyList(), listOf(track))
+        else GeoFileCodec.tracksToGeoJson(listOf(track))
+
+    fun writeExport(uri: Uri, kind: ExportKind, trackId: String? = null) {
         viewModelScope.launch {
             runCatching {
-                val content = exportContent(kind)
+                val single = trackId?.let { id -> _tracks.value.firstOrNull { it.id == id } }
+                val content = if (single != null) exportTrackContent(single, kind.gpx) else exportContent(kind)
                 withContext(Dispatchers.IO) {
                     val stream = getApplication<Application>().contentResolver
                         .openOutputStream(uri) ?: error("نوشتن فایل ممکن نشد")

@@ -46,6 +46,12 @@ import kotlinx.coroutines.flow.map
 
 private data class RecordingBadge(val active: Boolean, val paused: Boolean)
 
+/** A pending "save as" export, optionally scoped to one saved track. */
+private data class PendingExport(
+    val kind: MapViewModel.ExportKind,
+    val trackId: String? = null,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(viewModel: MapViewModel) {
@@ -75,8 +81,14 @@ fun MapScreen(viewModel: MapViewModel) {
 
     val snackbarHostState = remember { SnackbarHostState() }
     var deleteWaypointTarget by remember { mutableStateOf<Waypoint?>(null) }
-    var pendingExport by remember { mutableStateOf<MapViewModel.ExportKind?>(null) }
+    var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
     var showGoToDialog by remember { mutableStateOf(false) }
+    var recordingCardExpanded by remember { mutableStateOf(true) }
+
+    // A fresh recording always starts with the full card visible.
+    LaunchedEffect(recordingBadge.active) {
+        if (recordingBadge.active) recordingCardExpanded = true
+    }
 
     val mapPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::importMap)
@@ -91,8 +103,10 @@ fun MapScreen(viewModel: MapViewModel) {
         styleTarget = null
     }
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
-        val kind = pendingExport
-        if (uri != null && kind != null) viewModel.writeExport(uri, kind)
+        val request = pendingExport
+        if (uri != null && request != null) {
+            viewModel.writeExport(uri, request.kind, request.trackId)
+        }
         pendingExport = null
     }
 
@@ -215,6 +229,8 @@ fun MapScreen(viewModel: MapViewModel) {
 
                     RecordingHud(
                         stateFlow = viewModel.recording,
+                        expanded = recordingCardExpanded,
+                        onCollapse = { recordingCardExpanded = false },
                         onPause = viewModel::pauseRecording,
                         onResume = viewModel::resumeRecording,
                         onStop = viewModel::stopRecording,
@@ -234,6 +250,14 @@ fun MapScreen(viewModel: MapViewModel) {
                         )
                     }
                 }
+
+                // When the recording card is closed the compact bar keeps the state
+                // visible and opens the card again, while the track keeps recording.
+                RecordingMiniHud(
+                    stateFlow = viewModel.recording,
+                    visible = !recordingCardExpanded,
+                    onExpand = { recordingCardExpanded = true },
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -351,6 +375,7 @@ fun MapScreen(viewModel: MapViewModel) {
             },
             onRecord = {
                 viewModel.closeSheet()
+                recordingCardExpanded = true
                 if (!recordingBadge.active) viewModel.startRecording()
             },
             onWaypoints = { viewModel.openSheet(Sheet.WAYPOINTS) },
@@ -391,7 +416,7 @@ fun MapScreen(viewModel: MapViewModel) {
             onDelete = { deleteWaypointTarget = it },
             onFitAll = { viewModel.fitAllWaypoints(); viewModel.closeSheet() },
             onExport = {
-                pendingExport = MapViewModel.ExportKind.WAYPOINTS_GPX
+                pendingExport = PendingExport(MapViewModel.ExportKind.WAYPOINTS_GPX)
                 exporter.launch("atlasgis-waypoints.gpx")
             },
             onImport = { geoPicker.launch(arrayOf("*/*")) },
@@ -405,9 +430,19 @@ fun MapScreen(viewModel: MapViewModel) {
             onShowTracksChange = viewModel::setShowTracks,
             onShow = viewModel::showTrack,
             onDelete = { track -> viewModel.deleteTrack(track.id) },
-            onExport = {
-                pendingExport = MapViewModel.ExportKind.TRACKS_GPX
-                exporter.launch("atlasgis-tracks.gpx")
+            onRename = viewModel::renameTrack,
+            onExportAll = { gpx ->
+                pendingExport = PendingExport(
+                    if (gpx) MapViewModel.ExportKind.TRACKS_GPX else MapViewModel.ExportKind.TRACKS_GEOJSON,
+                )
+                exporter.launch(if (gpx) "atlasgis-tracks.gpx" else "atlasgis-tracks.geojson")
+            },
+            onExportTrack = { track, gpx ->
+                pendingExport = PendingExport(
+                    if (gpx) MapViewModel.ExportKind.TRACKS_GPX else MapViewModel.ExportKind.TRACKS_GEOJSON,
+                    track.id,
+                )
+                exporter.launch(safeFileName(track.name, if (gpx) "gpx" else "geojson"))
             },
             onImport = { geoPicker.launch(arrayOf("*/*")) },
         )
@@ -542,18 +577,52 @@ private fun MeasureLabelsThroughCamera(controller: MapController, measure: Measu
 @Composable
 private fun RecordingHud(
     stateFlow: StateFlow<RecordingState>,
+    expanded: Boolean,
+    onCollapse: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
 ) {
     val state by stateFlow.collectAsStateWithLifecycle()
     AnimatedVisibility(
-        visible = state.active,
+        visible = state.active && expanded,
         enter = expandVertically(),
         exit = shrinkVertically(),
     ) {
-        RecordingCard(state = state, onPause = onPause, onResume = onResume, onStop = onStop)
+        RecordingCard(
+            state = state,
+            onPause = onPause,
+            onResume = onResume,
+            onStop = onStop,
+            onCollapse = onCollapse,
+        )
     }
+}
+
+@Composable
+private fun RecordingMiniHud(
+    stateFlow: StateFlow<RecordingState>,
+    visible: Boolean,
+    onExpand: () -> Unit,
+) {
+    val state by stateFlow.collectAsStateWithLifecycle()
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible && state.active,
+        enter = androidx.compose.animation.fadeIn(),
+        exit = androidx.compose.animation.fadeOut(),
+    ) {
+        RecordingMiniBar(state = state, onExpand = onExpand)
+    }
+}
+
+/** Keeps track names usable as file names on every document provider. */
+private fun safeFileName(raw: String, extension: String): String {
+    val cleaned = raw.trim()
+        .replace(Regex("[\\\\/:*?\"<>|]"), "-")
+        .replace(Regex("\\s+"), "-")
+        .take(48)
+        .ifBlank { "atlasgis-track" }
+    return "$cleaned.$extension"
 }
 
 @Composable
