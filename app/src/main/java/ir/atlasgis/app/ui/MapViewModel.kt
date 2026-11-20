@@ -24,6 +24,7 @@ import ir.atlasgis.app.data.SettingsStore
 import ir.atlasgis.app.data.Track
 import ir.atlasgis.app.data.Waypoint
 import ir.atlasgis.app.data.WaypointCategory
+import ir.atlasgis.app.data.WaypointCategoryStyle
 import ir.atlasgis.app.domain.TrackSession
 import ir.atlasgis.app.ui.map.MapController
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +42,7 @@ import kotlin.math.max
 
 enum class Tool { BROWSE, MEASURE }
 
-enum class Sheet { NONE, LAYERS, WAYPOINTS, TRACKS, SETTINGS }
+enum class Sheet { NONE, TOOLS, LAYERS, WAYPOINTS, TRACKS, SETTINGS }
 
 data class MeasureUiState(
     val active: Boolean = false,
@@ -70,6 +71,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _waypoints = MutableStateFlow<List<Waypoint>>(emptyList())
     val waypoints: StateFlow<List<Waypoint>> = _waypoints.asStateFlow()
+
+    private val _categoryStyles = MutableStateFlow(WaypointCategoryStyle.defaults())
+    val categoryStyles: StateFlow<List<WaypointCategoryStyle>> = _categoryStyles.asStateFlow()
 
     private val _tracks = MutableStateFlow<List<Track>>(emptyList())
     val tracks: StateFlow<List<Track>> = _tracks.asStateFlow()
@@ -156,6 +160,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             val loadedLayers = withContext(Dispatchers.IO) { library.layers() }
             _layers.value = loadedLayers
             _waypoints.value = withContext(Dispatchers.IO) { db.readWaypoints() }
+            _categoryStyles.value = withContext(Dispatchers.IO) { db.readCategoryStyles() }
             _tracks.value = withContext(Dispatchers.IO) { db.readTracks() }
             ensureStyle(force = true)
             pushOverlays()
@@ -185,7 +190,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private fun pushOverlays() {
         val measureState = _measure.value
         controller.pushOverlays(
-            waypointsJson = OverlayGeoJson.waypoints(_waypoints.value, _selectedWaypointId.value),
+            waypointsJson = OverlayGeoJson.waypoints(
+                _waypoints.value,
+                _selectedWaypointId.value,
+                _categoryStyles.value.associate { it.key to it.hexColor },
+            ),
             measureJson = if (measureState.active) {
                 OverlayGeoJson.measurement(measureState.points, measureState.closed)
             } else {
@@ -386,6 +395,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             if (_selectedWaypointId.value == id) _selectedWaypointId.value = null
             pushOverlays()
             _messages.tryEmit("نقطه حذف شد")
+        }
+    }
+
+    fun updateCategoryStyle(style: WaypointCategoryStyle) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { db.upsertCategoryStyle(style) }
+            _categoryStyles.value = withContext(Dispatchers.IO) { db.readCategoryStyles() }
+            // Marker colours on the map come from the category style too.
+            pushOverlays()
+            _messages.tryEmit("دستهٔ «${style.label}» به‌روزرسانی شد")
         }
     }
 

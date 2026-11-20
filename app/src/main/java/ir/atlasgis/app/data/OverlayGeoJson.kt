@@ -12,7 +12,11 @@ object OverlayGeoJson {
 
     fun empty(): String = """{"type":"FeatureCollection","features":[]}"""
 
-    fun waypoints(waypoints: List<Waypoint>, selectedId: String?): String {
+    fun waypoints(
+        waypoints: List<Waypoint>,
+        selectedId: String?,
+        categoryColors: Map<String, String> = emptyMap(),
+    ): String {
         if (waypoints.isEmpty()) return empty()
         val sb = StringBuilder(waypoints.size * 110 + 48)
         sb.append("""{"type":"FeatureCollection","features":[""")
@@ -21,7 +25,10 @@ object OverlayGeoJson {
             sb.append("""{"type":"Feature","properties":{"id":""")
             appendQuoted(sb, waypoint.id)
             sb.append(""","color":""")
-            appendQuoted(sb, colorFor(waypoint.category))
+            appendQuoted(
+                sb,
+                categoryColors[waypoint.category.key] ?: colorFor(waypoint.category),
+            )
             sb.append(""","name":""")
             appendQuoted(sb, waypoint.name)
             sb.append(""","selected":""")

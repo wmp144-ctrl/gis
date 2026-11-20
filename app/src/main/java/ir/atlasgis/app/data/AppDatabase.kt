@@ -81,6 +81,17 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
             """.trimIndent(),
         )
         db.execSQL("CREATE INDEX idx_tracks_started ON tracks(started_at DESC)")
+        db.execSQL(
+            """
+            CREATE TABLE waypoint_categories (
+                key TEXT PRIMARY KEY NOT NULL,
+                label TEXT NOT NULL,
+                color INTEGER NOT NULL,
+                icon TEXT NOT NULL
+            )
+            """.trimIndent(),
+        )
+        seedCategoryStyles(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -90,6 +101,64 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         if (oldVersion < 3) {
             db.execSQL("ALTER TABLE map_layers ADD COLUMN style_preset TEXT")
         }
+        if (oldVersion < 4) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS waypoint_categories (
+                    key TEXT PRIMARY KEY NOT NULL,
+                    label TEXT NOT NULL,
+                    color INTEGER NOT NULL,
+                    icon TEXT NOT NULL
+                )
+                """.trimIndent(),
+            )
+            seedCategoryStyles(db)
+        }
+    }
+
+    /** Missing rows only: an upgraded database keeps the user's own colours/icons. */
+    private fun seedCategoryStyles(db: SQLiteDatabase) {
+        WaypointCategoryStyle.defaults().forEach { style ->
+            db.insertWithOnConflict(
+                "waypoint_categories",
+                null,
+                style.toValues(),
+                SQLiteDatabase.CONFLICT_IGNORE,
+            )
+        }
+    }
+
+    fun readCategoryStyles(): List<WaypointCategoryStyle> = synchronized(writeLock) {
+        val rows = HashMap<String, WaypointCategoryStyle>()
+        readableDatabase.query(
+            "waypoint_categories", null, null, null, null, null, "rowid ASC",
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val style = WaypointCategoryStyle(
+                    key = cursor.getString(cursor.getColumnIndexOrThrow("key")),
+                    label = cursor.getString(cursor.getColumnIndexOrThrow("label")),
+                    color = cursor.getInt(cursor.getColumnIndexOrThrow("color")),
+                    icon = cursor.getString(cursor.getColumnIndexOrThrow("icon")),
+                )
+                rows[style.key] = style
+            }
+        }
+        // Keep the canonical order and include defaults for rows an old build never seeded.
+        WaypointCategoryStyle.defaults().map { default -> rows[default.key] ?: default }
+    }
+
+    fun upsertCategoryStyle(style: WaypointCategoryStyle) = synchronized(writeLock) {
+        writableDatabase.insertWithOnConflict(
+            "waypoint_categories", null, style.toValues(), SQLiteDatabase.CONFLICT_REPLACE,
+        )
+        Unit
+    }
+
+    private fun WaypointCategoryStyle.toValues(): ContentValues = ContentValues().apply {
+        put("key", key)
+        put("label", label)
+        put("color", color)
+        put("icon", icon)
     }
 
     // ---------------------------------------------------------------- layers
@@ -340,7 +409,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
 
     companion object {
         private const val NAME = "atlasgis.db"
-        private const val VERSION = 3
+        private const val VERSION = 4
 
         fun newId(): String = UUID.randomUUID().toString()
 

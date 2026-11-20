@@ -66,6 +66,7 @@ fun MapScreen(viewModel: MapViewModel) {
     val editingWaypoint by viewModel.editingWaypoint.collectAsStateWithLifecycle()
     val showTracks by viewModel.showTracks.collectAsStateWithLifecycle()
     val gps by viewModel.gps.collectAsStateWithLifecycle()
+    val categoryStyles by viewModel.categoryStyles.collectAsStateWithLifecycle()
     val cardsScroll = rememberScrollState()
 
     val recordingBadge by remember(viewModel) {
@@ -170,8 +171,6 @@ fun MapScreen(viewModel: MapViewModel) {
                 layerSummary = activeLayerName,
                 layerCount = layers.size,
                 onLayers = { viewModel.openSheet(Sheet.LAYERS) },
-                onWaypoints = { viewModel.openSheet(Sheet.WAYPOINTS) },
-                onTracks = { viewModel.openSheet(Sheet.TRACKS) },
                 onSettings = { viewModel.openSheet(Sheet.SETTINGS) },
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
@@ -284,19 +283,8 @@ fun MapScreen(viewModel: MapViewModel) {
                 BottomDock(
                     tool = tool,
                     recordingActive = recordingBadge.active,
-                    recordingPaused = recordingBadge.paused,
                     onBrowse = { viewModel.stopMeasure() },
-                    onMeasure = {
-                        if (!measure.active) viewModel.startMeasure(MeasureMode.DISTANCE)
-                    },
-                    onRecord = {
-                        if (recordingBadge.active) {
-                            if (recordingBadge.paused) viewModel.resumeRecording() else viewModel.pauseRecording()
-                        } else {
-                            viewModel.startRecording()
-                        }
-                    },
-                    onWaypoints = { viewModel.openSheet(Sheet.WAYPOINTS) },
+                    onTools = { viewModel.openSheet(Sheet.TOOLS) },
                 )
             }
         }
@@ -351,6 +339,24 @@ fun MapScreen(viewModel: MapViewModel) {
     // ------------------------------------------------------------------ sheets
 
     when (sheet) {
+        Sheet.TOOLS -> ToolsSheet(
+            waypointCount = waypoints.size,
+            trackCount = tracks.size,
+            recordingActive = recordingBadge.active,
+            recordingPaused = recordingBadge.paused,
+            onDismiss = viewModel::closeSheet,
+            onMeasure = {
+                viewModel.closeSheet()
+                if (!measure.active) viewModel.startMeasure(MeasureMode.DISTANCE)
+            },
+            onRecord = {
+                viewModel.closeSheet()
+                if (!recordingBadge.active) viewModel.startRecording()
+            },
+            onWaypoints = { viewModel.openSheet(Sheet.WAYPOINTS) },
+            onTracks = { viewModel.openSheet(Sheet.TRACKS) },
+        )
+
         Sheet.LAYERS -> LayersSheet(
             layers = layers,
             onDismiss = viewModel::closeSheet,
@@ -371,6 +377,7 @@ fun MapScreen(viewModel: MapViewModel) {
         Sheet.WAYPOINTS -> WaypointsSheet(
             waypoints = waypoints,
             gps = gps,
+            categoryStyles = categoryStyles,
             onDismiss = viewModel::closeSheet,
             onAddAtCenter = {
                 val center = controller.center()
@@ -388,6 +395,7 @@ fun MapScreen(viewModel: MapViewModel) {
                 exporter.launch("atlasgis-waypoints.gpx")
             },
             onImport = { geoPicker.launch(arrayOf("*/*")) },
+            onCategoryStyleSave = viewModel::updateCategoryStyle,
         )
 
         Sheet.TRACKS -> TracksSheet(

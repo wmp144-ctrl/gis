@@ -55,43 +55,11 @@ import ir.atlasgis.app.ui.components.ToolPill
 import ir.atlasgis.app.ui.theme.AtlasColors
 import kotlin.math.roundToInt
 
-fun categoryLabel(category: WaypointCategory): String = when (category) {
-    WaypointCategory.GENERAL -> "عمومی"
-    WaypointCategory.WATER -> "آب"
-    WaypointCategory.FOOD -> "غذا"
-    WaypointCategory.CAMP -> "اردوگاه"
-    WaypointCategory.HAZARD -> "خطر"
-    WaypointCategory.PARKING -> "پارکینگ"
-    WaypointCategory.VIEW -> "چشم‌انداز"
-}
-
-fun categoryIcon(category: WaypointCategory): ImageVector = when (category) {
-    WaypointCategory.GENERAL -> Icons.Rounded.Place
-    WaypointCategory.WATER -> Icons.Rounded.WaterDrop
-    WaypointCategory.FOOD -> Icons.Rounded.Restaurant
-    WaypointCategory.CAMP -> Icons.Rounded.Cabin
-    WaypointCategory.HAZARD -> Icons.Rounded.Warning
-    WaypointCategory.PARKING -> Icons.Rounded.LocalParking
-    WaypointCategory.VIEW -> Icons.Rounded.PhotoCamera
-}
-
-fun categoryColor(category: WaypointCategory): Color = when (category) {
-    WaypointCategory.GENERAL -> AtlasColors.Accent
-    WaypointCategory.WATER -> Color(0xFF5FB8FF)
-    WaypointCategory.FOOD -> Color(0xFFFFC15E)
-    WaypointCategory.CAMP -> Color(0xFFB98CFF)
-    WaypointCategory.HAZARD -> Color(0xFFFF6B6B)
-    WaypointCategory.PARKING -> Color(0xFF7C8CFF)
-    WaypointCategory.VIEW -> Color(0xFFFF9F45)
-}
-
 @Composable
 fun MapTopBar(
     layerSummary: String,
     layerCount: Int,
     onLayers: () -> Unit,
-    onWaypoints: () -> Unit,
-    onTracks: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -117,8 +85,6 @@ fun MapTopBar(
                 )
             }
             RoundIconButton(Icons.Rounded.Layers, "لایه‌ها", onLayers)
-            RoundIconButton(Icons.Rounded.Place, "نقاط", onWaypoints)
-            RoundIconButton(Icons.Rounded.Route, "مسیرهای ثبت‌شده", onTracks)
             RoundIconButton(Icons.Rounded.Settings, "تنظیمات", onSettings)
         }
     }
@@ -165,7 +131,7 @@ fun MapSideControls(
             RoundIconButton(Icons.Rounded.Remove, "کوچک‌نمایی", onZoomOut)
             HorizontalDivider(color = AtlasColors.Outline, modifier = Modifier.width(22.dp))
             RoundIconButton(
-                icon = Icons.Rounded.NearMe,
+                icon = Icons.Rounded.MyLocation,
                 contentDescription = "موقعیت من",
                 onClick = onLocate,
                 tint = if (following) AtlasColors.Accent else AtlasColors.TextPrimary,
@@ -179,18 +145,15 @@ fun MapSideControls(
 fun BottomDock(
     tool: Tool,
     recordingActive: Boolean,
-    recordingPaused: Boolean,
     onBrowse: () -> Unit,
-    onMeasure: () -> Unit,
-    onRecord: () -> Unit,
-    onWaypoints: () -> Unit,
+    onTools: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     GlassPanel(modifier = modifier) {
         Row(
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             ToolPill(
                 icon = Icons.Rounded.Explore,
@@ -199,32 +162,15 @@ fun BottomDock(
                 onClick = onBrowse,
                 modifier = Modifier.weight(1f),
             )
+            // The map screen keeps a single entry point; measurement, recording and
+            // waypoints all live in this sheet so the map stays uncluttered.
             ToolPill(
-                icon = Icons.Rounded.Straighten,
-                label = "اندازه‌گیری",
-                selected = tool == Tool.MEASURE,
-                onClick = onMeasure,
+                icon = Icons.Rounded.GridView,
+                label = "ابزارها",
+                selected = tool != Tool.BROWSE || recordingActive,
+                onClick = onTools,
                 modifier = Modifier.weight(1f),
-            )
-            ToolPill(
-                icon = Icons.Rounded.Route,
-                label = "ثبت مسیر",
-                selected = recordingActive,
-                onClick = onRecord,
-                modifier = Modifier.weight(1f),
-                accent = if (recordingActive) AtlasColors.Track else AtlasColors.Accent,
-                badgeColor = if (recordingActive) {
-                    if (recordingPaused) AtlasColors.Warning else AtlasColors.Danger
-                } else {
-                    null
-                },
-            )
-            ToolPill(
-                icon = Icons.Rounded.Place,
-                label = "نقاط",
-                selected = false,
-                onClick = onWaypoints,
-                modifier = Modifier.weight(1f),
+                badgeColor = if (recordingActive) AtlasColors.Danger else null,
             )
         }
     }

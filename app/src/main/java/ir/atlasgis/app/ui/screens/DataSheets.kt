@@ -30,6 +30,7 @@ import ir.atlasgis.app.data.AppSettings
 import ir.atlasgis.app.data.GpsFix
 import ir.atlasgis.app.data.Track
 import ir.atlasgis.app.data.Waypoint
+import ir.atlasgis.app.data.WaypointCategoryStyle
 import ir.atlasgis.app.ui.components.GlassPanel
 import ir.atlasgis.app.ui.components.RoundIconButton
 import ir.atlasgis.app.ui.components.SectionHeader
@@ -44,6 +45,7 @@ import java.util.Locale
 fun WaypointsSheet(
     waypoints: List<Waypoint>,
     gps: GpsFix?,
+    categoryStyles: List<WaypointCategoryStyle>,
     onDismiss: () -> Unit,
     onAddAtCenter: () -> Unit,
     onShow: (Waypoint) -> Unit,
@@ -52,8 +54,10 @@ fun WaypointsSheet(
     onFitAll: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
+    onCategoryStyleSave: (WaypointCategoryStyle) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    var manageCategories by remember { mutableStateOf(false) }
     val filtered = remember(waypoints, query) {
         val needle = query.trim()
         if (needle.isEmpty()) {
@@ -82,6 +86,9 @@ fun WaypointsSheet(
                 subtitle = "${waypoints.size.toString().toPersianDigits()} نقطه",
                 action = {
                     Row {
+                        IconButton(onClick = { manageCategories = true }) {
+                            Icon(Icons.Rounded.Category, "دسته‌بندی‌ها", tint = AtlasColors.TextSecondary)
+                        }
                         IconButton(onClick = onImport) {
                             Icon(Icons.Rounded.FileDownload, "ورود فایل", tint = AtlasColors.TextSecondary)
                         }
@@ -152,6 +159,14 @@ fun WaypointsSheet(
                 }
             }
         }
+    }
+
+    if (manageCategories) {
+        CategoryManagerDialog(
+            styles = categoryStyles,
+            onDismiss = { manageCategories = false },
+            onSave = onCategoryStyleSave,
+        )
     }
 }
 

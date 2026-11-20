@@ -26,7 +26,10 @@ object MapStyleBuilder {
     const val LAYER_TRACK_LINE = "atlas-track-line"
     const val LAYER_ACTIVE_TRACK = "atlas-active-track-line"
     const val LAYER_GPS_ACCURACY = "atlas-gps-accuracy"
+    const val LAYER_GPS_HALO = "atlas-gps-halo"
+    const val LAYER_GPS_RING = "atlas-gps-ring"
     const val LAYER_GPS_DOT = "atlas-gps-dot"
+    const val LAYER_GPS_CORE = "atlas-gps-core"
     const val LAYER_BACKGROUND = "atlas-background"
 
     private const val ACCENT = "#3ED598"
@@ -216,6 +219,38 @@ object MapStyleBuilder {
                         .put("fill-opacity", 0.14),
                 ),
         )
+        // Location puck: soft halo, a crisp contrasting ring and a small core. It
+        // reads on both dark and light map palettes and replaces the plain circle.
+        val markerRing = if (preset.isLight) "#22303F" else "#F7FBFF"
+        styleLayers.put(
+            JSONObject()
+                .put("id", LAYER_GPS_HALO)
+                .put("type", "circle")
+                .put("source", SRC_GPS)
+                .put(
+                    "paint",
+                    JSONObject()
+                        .put("circle-radius", 22)
+                        .put("circle-color", ACCENT)
+                        .put("circle-opacity", 0.14)
+                        .put("circle-blur", 0.9)
+                        .put("circle-pitch-alignment", "map"),
+                ),
+        )
+        styleLayers.put(
+            JSONObject()
+                .put("id", LAYER_GPS_RING)
+                .put("type", "circle")
+                .put("source", SRC_GPS)
+                .put(
+                    "paint",
+                    JSONObject()
+                        .put("circle-radius", 10.5)
+                        .put("circle-color", markerRing)
+                        .put("circle-opacity", 1.0)
+                        .put("circle-pitch-alignment", "map"),
+                ),
+        )
         styleLayers.put(
             JSONObject()
                 .put("id", LAYER_GPS_DOT)
@@ -226,8 +261,19 @@ object MapStyleBuilder {
                     JSONObject()
                         .put("circle-radius", 8)
                         .put("circle-color", ACCENT)
-                        .put("circle-stroke-width", 2.5)
-                        .put("circle-stroke-color", "#0B1220")
+                        .put("circle-pitch-alignment", "map"),
+                ),
+        )
+        styleLayers.put(
+            JSONObject()
+                .put("id", LAYER_GPS_CORE)
+                .put("type", "circle")
+                .put("source", SRC_GPS)
+                .put(
+                    "paint",
+                    JSONObject()
+                        .put("circle-radius", 3.2)
+                        .put("circle-color", markerRing)
                         .put("circle-pitch-alignment", "map"),
                 ),
         )
