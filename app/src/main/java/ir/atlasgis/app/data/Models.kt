@@ -22,8 +22,11 @@ data class MapLayer(
     val vectorLayers: List<String>,
     val fileSizeBytes: Long,
     val addedAt: Long,
+    /** Absolute path of a user supplied style.json, applied instead of the auto style. */
+    val stylePath: String? = null,
 ) {
     val zoomLabel: String get() = "z$minZoom–$maxZoom"
+    val hasCustomStyle: Boolean get() = stylePath != null
 }
 
 enum class WaypointCategory(val key: String) {

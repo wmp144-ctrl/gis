@@ -53,7 +53,7 @@ object MapStyleBuilder {
 
         val ordered = layers.filter { it.visible }.sortedBy { it.sortOrder }
         ordered.forEach { layer ->
-            addBaseLayer(sources, styleLayers, layer)
+            addBaseLayer(root, sources, styleLayers, layer)
         }
 
         // Overlays, bottom to top.
@@ -257,7 +257,12 @@ object MapStyleBuilder {
         return array
     }
 
-    private fun addBaseLayer(sources: JSONObject, layers: JSONArray, layer: MapLayer) {
+    private fun addBaseLayer(
+        root: JSONObject,
+        sources: JSONObject,
+        layers: JSONArray,
+        layer: MapLayer,
+    ) {
         if (!MapFiles.exists(layer.filePath)) return
         val sourceId = "atlas-src-${layer.id}"
         val uri = "mbtiles://" + layer.filePath
@@ -296,11 +301,18 @@ object MapStyleBuilder {
                     .put("maxzoom", layer.maxZoom)
                     .applyBounds(layer),
             )
-            val specs = VectorStyleHeuristics.layersFor(sourceId, layer.vectorLayers, layer.opacity)
-            for (i in 0 until specs.length()) {
-                val spec = specs.optJSONObject(i) ?: continue
-                spec.put("id", "atlas-vec-${layer.id}-$i")
-                layers.put(spec)
+            val template = layer.stylePath
+                ?.let { path -> runCatching { java.io.File(path).readText() }.getOrNull() }
+            val applied = template != null && CustomStyleTemplate.apply(
+                root, sources, layers, layer, sourceId, template,
+            )
+            if (!applied) {
+                val specs = VectorStyleHeuristics.layersFor(sourceId, layer.vectorLayers, layer.opacity)
+                for (i in 0 until specs.length()) {
+                    val spec = specs.optJSONObject(i) ?: continue
+                    spec.put("id", "atlas-vec-${layer.id}-$i")
+                    layers.put(spec)
+                }
             }
         }
     }

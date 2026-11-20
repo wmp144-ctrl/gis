@@ -17,6 +17,10 @@ class MapLibrary(private val context: Context) {
     val mapsDirectory: File
         get() = File(context.filesDir, "maps").apply { if (!exists()) mkdirs() }
 
+    /** Private folder holding the imported `style.json` templates. */
+    val stylesDirectory: File
+        get() = File(context.filesDir, "styles").apply { if (!exists()) mkdirs() }
+
     suspend fun layers(): List<MapLayer> = withContext(Dispatchers.IO) { db.readLayers() }
 
     suspend fun import(
@@ -129,8 +133,79 @@ class MapLibrary(private val context: Context) {
         db.readLayers()
     }
 
+    /**
+     * Copies a user supplied style.json next to the app private maps and attaches it
+     * to [layer]. The template is validated first, so a broken file never reaches the
+     * map (the previous style stays in place).
+     */
+    suspend fun importStyle(layer: MapLayer, uri: Uri): MapLayer = withContext(Dispatchers.IO) {
+        if (layer.format != TileFormat.VECTOR) {
+            throw IOException("استایل سفارشی فقط برای نقشه‌های برداری قابل استفاده است")
+        }
+        val raw = try {
+            context.contentResolver.openInputStream(uri)
+                ?.use { stream -> readLimited(stream) }
+                ?: throw IOException("دسترسی به فایل استایل ممکن نشد")
+        } catch (error: Throwable) {
+            throw when (error) {
+                is IOException -> error
+                else -> IOException("خواندن فایل استایل ناموفق بود: ${error.message ?: "خطای ناشناخته"}")
+            }
+        }
+        try {
+            CustomStyleTemplate.validate(raw)
+        } catch (error: IllegalArgumentException) {
+            throw IOException(error.message ?: "فایل style.json معتبر نیست")
+        }
+
+        val target = File(stylesDirectory, "${layer.id}.json")
+        val temp = File(stylesDirectory, "${layer.id}.part")
+        try {
+            temp.writeText(raw)
+            if (!temp.renameTo(target)) {
+                temp.copyTo(target, overwrite = true)
+                temp.delete()
+            }
+        } catch (error: IOException) {
+            temp.delete()
+            throw IOException("ذخیرهٔ استایل ناموفق بود: ${error.message ?: "خطای ناشناخته"}")
+        }
+
+        layer.stylePath?.let { previous -> if (previous != target.absolutePath) File(previous).delete() }
+        val updated = layer.copy(stylePath = target.absolutePath)
+        db.upsertLayer(updated)
+        updated
+    }
+
+    /** Removes the custom template so the layer falls back to the automatic style. */
+    suspend fun clearStyle(layer: MapLayer): MapLayer = withContext(Dispatchers.IO) {
+        layer.stylePath?.let { path -> File(path).delete() }
+        val updated = layer.copy(stylePath = null)
+        db.upsertLayer(updated)
+        updated
+    }
+
+    private fun readLimited(stream: java.io.InputStream): String {
+        val buffer = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(64 * 1024)
+        var total = 0
+        while (true) {
+            val read = stream.read(chunk)
+            if (read <= 0) break
+            total += read
+            if (total > CustomStyleTemplate.MAX_BYTES) {
+                throw IOException("فایل استایل بیش از حد بزرگ است (حداکثر ۲ مگابایت)")
+            }
+            buffer.write(chunk, 0, read)
+        }
+        val text = buffer.toString(Charsets.UTF_8.name())
+        if (text.isBlank()) throw IOException("فایل استایل خالی است")
+        return text
+    }
+
     suspend fun delete(layer: MapLayer) = withContext(Dispatchers.IO) {
         db.deleteLayer(layer.id)
+        layer.stylePath?.let { path -> File(path).delete() }
         val file = File(layer.filePath)
         file.delete()
         File(layer.filePath + "-journal").delete()

@@ -13,3 +13,9 @@ local.properties
 .kotlin/
 build/
 app/build/
+
+# Release signing material (never commit)
+key.properties
+*.jks
+*.keystore
+keystore/

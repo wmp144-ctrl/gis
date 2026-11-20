@@ -38,6 +38,8 @@ fun LayersSheet(
     onMove: (MapLayer, Boolean) -> Unit,
     onRename: (MapLayer, String) -> Unit,
     onDelete: (MapLayer) -> Unit,
+    onImportStyle: (MapLayer) -> Unit,
+    onClearStyle: (MapLayer) -> Unit,
 ) {
     var renameTarget by remember { mutableStateOf<MapLayer?>(null) }
     var deleteTarget by remember { mutableStateOf<MapLayer?>(null) }
@@ -96,6 +98,8 @@ fun LayersSheet(
                             onMoveDown = { onMove(layer, false) },
                             onRename = { renameTarget = layer },
                             onDelete = { deleteTarget = layer },
+                            onImportStyle = { onImportStyle(layer) },
+                            onClearStyle = { onClearStyle(layer) },
                         )
                     }
                 }
@@ -149,6 +153,8 @@ private fun LayerRow(
     onMoveDown: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onImportStyle: () -> Unit,
+    onClearStyle: () -> Unit,
 ) {
     var sliderValue by remember(layer.id, layer.opacity) { mutableStateOf(layer.opacity) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -198,6 +204,13 @@ private fun LayerRow(
                         )
                         StatusChip(text = layer.zoomLabel, background = Color.Transparent)
                         StatusChip(text = formatBytes(layer.fileSizeBytes), background = Color.Transparent)
+                        if (layer.hasCustomStyle) {
+                            StatusChip(
+                                text = "استایل سفارشی",
+                                color = AtlasColors.Warning,
+                                background = Color.Transparent,
+                            )
+                        }
                     }
                 }
                 Switch(
@@ -270,6 +283,20 @@ private fun LayerRow(
                             leadingIcon = { Icon(Icons.Rounded.Edit, null, tint = AtlasColors.TextSecondary) },
                             onClick = { menuOpen = false; onRename() },
                         )
+                        if (layer.format == TileFormat.VECTOR) {
+                            DropdownMenuItem(
+                                text = { Text("بارگذاری استایل style.json", color = AtlasColors.TextPrimary) },
+                                leadingIcon = { Icon(Icons.Rounded.Style, null, tint = AtlasColors.TextSecondary) },
+                                onClick = { menuOpen = false; onImportStyle() },
+                            )
+                            if (layer.hasCustomStyle) {
+                                DropdownMenuItem(
+                                    text = { Text("حذف استایل سفارشی", color = AtlasColors.TextPrimary) },
+                                    leadingIcon = { Icon(Icons.Rounded.LayersClear, null, tint = AtlasColors.TextSecondary) },
+                                    onClick = { menuOpen = false; onClearStyle() },
+                                )
+                            }
+                        }
                         DropdownMenuItem(
                             text = { Text("انتقال به بالا", color = AtlasColors.TextPrimary) },
                             enabled = !isTop,

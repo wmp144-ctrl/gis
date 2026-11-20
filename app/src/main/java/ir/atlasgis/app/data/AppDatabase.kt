@@ -39,7 +39,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
                 attribution TEXT,
                 vector_layers TEXT,
                 file_size INTEGER NOT NULL DEFAULT 0,
-                added_at INTEGER NOT NULL
+                added_at INTEGER NOT NULL,
+                style_path TEXT
             )
             """.trimIndent(),
         )
@@ -81,7 +82,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         db.execSQL("CREATE INDEX idx_tracks_started ON tracks(started_at DESC)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE map_layers ADD COLUMN style_path TEXT")
+        }
+    }
 
     // ---------------------------------------------------------------- layers
 
@@ -227,6 +232,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         put("vector_layers", JSONArray(vectorLayers).toString())
         put("file_size", fileSizeBytes)
         put("added_at", addedAt)
+        put("style_path", stylePath)
     }
 
     private fun Cursor.toLayer(): MapLayer {
@@ -259,6 +265,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
             vectorLayers = parseStringArray(getString(getColumnIndexOrThrow("vector_layers"))),
             fileSizeBytes = getLong(getColumnIndexOrThrow("file_size")),
             addedAt = getLong(getColumnIndexOrThrow("added_at")),
+            stylePath = getColumnIndex("style_path")
+                .takeIf { it >= 0 && !isNull(it) }
+                ?.let { getString(it) },
         )
     }
 
@@ -322,7 +331,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
 
     companion object {
         private const val NAME = "atlasgis.db"
-        private const val VERSION = 1
+        private const val VERSION = 2
 
         fun newId(): String = UUID.randomUUID().toString()
 

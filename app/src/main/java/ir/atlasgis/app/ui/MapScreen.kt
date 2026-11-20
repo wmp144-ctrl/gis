@@ -29,6 +29,7 @@ import ir.atlasgis.app.core.LatLon
 import ir.atlasgis.app.core.distanceMeters
 import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.data.GpsFix
+import ir.atlasgis.app.data.MapLayer
 import ir.atlasgis.app.data.MeasureMode
 import ir.atlasgis.app.data.RecordingState
 import ir.atlasgis.app.data.Waypoint
@@ -77,6 +78,12 @@ fun MapScreen(viewModel: MapViewModel) {
     }
     val geoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::importGeoFile)
+    }
+    var styleTarget by remember { mutableStateOf<MapLayer?>(null) }
+    val stylePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val target = styleTarget
+        if (uri != null && target != null) viewModel.importLayerStyle(target, uri)
+        styleTarget = null
     }
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val kind = pendingExport
@@ -338,6 +345,11 @@ fun MapScreen(viewModel: MapViewModel) {
             onMove = viewModel::moveLayer,
             onRename = viewModel::renameLayer,
             onDelete = viewModel::deleteLayer,
+            onImportStyle = { layer ->
+                styleTarget = layer
+                stylePicker.launch(arrayOf("*/*"))
+            },
+            onClearStyle = viewModel::clearLayerStyle,
         )
 
         Sheet.WAYPOINTS -> WaypointsSheet(

@@ -171,7 +171,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val key = buildString {
             current.forEach { layer ->
                 append(layer.id).append(':').append(layer.visible).append(':')
-                    .append(layer.opacity).append(':').append(layer.sortOrder).append(';')
+                    .append(layer.opacity).append(':').append(layer.sortOrder).append(':')
+                    .append(layer.stylePath ?: "-").append(';')
             }
         }
         if (!force && key == lastStyleKey) return
@@ -253,6 +254,37 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             library.rename(layer, name)
             _layers.value = library.layers()
+        }
+    }
+
+    fun importLayerStyle(layer: MapLayer, uri: Uri) {
+        viewModelScope.launch {
+            _importing.value = ImportUiState("در حال خواندن استایل…", 0f, true)
+            runCatching { withContext(Dispatchers.IO) { library.importStyle(layer, uri) } }
+                .onSuccess { updated ->
+                    _importing.value = null
+                    _layers.value = library.layers()
+                    ensureStyle(force = true)
+                    _messages.tryEmit("استایل سفارشی برای «${updated.name}» اعمال شد")
+                }
+                .onFailure { error ->
+                    _importing.value = null
+                    _messages.tryEmit(error.message ?: "بارگذاری استایل ناموفق بود")
+                }
+        }
+    }
+
+    fun clearLayerStyle(layer: MapLayer) {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { library.clearStyle(layer) } }
+                .onSuccess {
+                    _layers.value = library.layers()
+                    ensureStyle(force = true)
+                    _messages.tryEmit("استایل سفارشی حذف شد؛ استایل خودکار جای آن را گرفت")
+                }
+                .onFailure { error ->
+                    _messages.tryEmit(error.message ?: "حذف استایل ناموفق بود")
+                }
         }
     }
 
