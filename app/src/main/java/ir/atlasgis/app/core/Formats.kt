@@ -25,13 +25,16 @@ private fun Double.format(decimals: Int): String {
         .replace('.', '٫')
 }
 
-/** Distance with an automatically chosen unit. */
+/**
+ * Distance with an automatically chosen unit. The units stay in their latin
+ * symbols (m / km) as used on measuring lines and every stat in the app.
+ */
 fun formatDistance(meters: Double): String {
     if (!meters.isFinite()) return "—"
     return when {
-        meters < 1000.0 -> "${meters.roundToLong().toString().toPersianDigits()} متر"
-        meters < 100_000.0 -> "${(meters / 1000.0).format(2)} کیلومتر"
-        else -> "${(meters / 1000.0).format(1)} کیلومتر"
+        meters < 1000.0 -> "${meters.roundToLong().toString().toPersianDigits()} m"
+        meters < 100_000.0 -> "${(meters / 1000.0).format(2)} km"
+        else -> "${(meters / 1000.0).format(1)} km"
     }
 }
 
@@ -39,20 +42,19 @@ fun formatDistance(meters: Double): String {
 fun formatDistanceShort(meters: Double): String {
     if (!meters.isFinite()) return "—"
     return if (meters < 1000.0) {
-        "${meters.roundToLong().toString().toPersianDigits()} م"
+        "${meters.roundToLong().toString().toPersianDigits()} m"
     } else {
-        "${(meters / 1000.0).format(1)} کم"
+        "${(meters / 1000.0).format(1)} km"
     }
 }
 
+/** Area with squared units: m² below one square kilometre, km² above. */
 fun formatArea(squareMeters: Double): String {
     if (!squareMeters.isFinite()) return "—"
-    val hectares = squareMeters / 10_000.0
-    val km2 = squareMeters / 1_000_000.0
-    return when {
-        squareMeters < 10_000.0 -> "${squareMeters.roundToLong().toString().toPersianDigits()} مترمربع"
-        squareMeters < 1_000_000.0 -> "${hectares.format(2)} هکتار"
-        else -> "${km2.format(2)} کیلومترمربع"
+    return if (squareMeters < 1_000_000.0) {
+        "${squareMeters.roundToLong().toString().toPersianDigits()} m²"
+    } else {
+        "${(squareMeters / 1_000_000.0).format(2)} km²"
     }
 }
 
@@ -75,7 +77,7 @@ fun formatSpeed(metersPerSecond: Double): String {
 
 fun formatElevation(meters: Double?): String {
     if (meters == null || !meters.isFinite()) return "—"
-    return "${meters.roundToLong().toString().toPersianDigits()} متر"
+    return "${meters.roundToLong().toString().toPersianDigits()} m"
 }
 
 fun formatOpacity(alpha: Float): String = "${(alpha * 100).roundToLong().toString().toPersianDigits()}٪"

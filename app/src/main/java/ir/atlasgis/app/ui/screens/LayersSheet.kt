@@ -59,8 +59,8 @@ fun LayersSheet(
     ) {
         Column(
             Modifier
-                .fillMaxHeight(0.92f)
-                .padding(horizontal = 18.dp),
+                .fillMaxHeight(0.96f)
+                .padding(horizontal = 12.dp),
         ) {
             SectionHeader(
                 title = "نقشه‌های آفلاین",

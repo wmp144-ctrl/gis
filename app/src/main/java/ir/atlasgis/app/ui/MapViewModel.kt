@@ -23,7 +23,6 @@ import ir.atlasgis.app.data.RecordingState
 import ir.atlasgis.app.data.SettingsStore
 import ir.atlasgis.app.data.Track
 import ir.atlasgis.app.data.Waypoint
-import ir.atlasgis.app.data.WaypointCategory
 import ir.atlasgis.app.data.WaypointCategoryStyle
 import ir.atlasgis.app.domain.TrackSession
 import ir.atlasgis.app.ui.map.MapController
@@ -108,6 +107,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _showTracks = MutableStateFlow(true)
     val showTracks: StateFlow<Boolean> = _showTracks.asStateFlow()
 
+    /** False while the chrome is hidden by a short tap on the map. */
+    private val _chromeVisible = MutableStateFlow(true)
+    val chromeVisible: StateFlow<Boolean> = _chromeVisible.asStateFlow()
+
+    /** A record action is prepared but the GPS has not started yet. */
+    private val _recordArmed = MutableStateFlow(false)
+    val recordArmed: StateFlow<Boolean> = _recordArmed.asStateFlow()
+
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val messages: SharedFlow<String> = _messages
 
@@ -189,9 +196,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun pushOverlays() {
         val measureState = _measure.value
+        // Per-category map filter: hidden categories are left out of the GeoJSON.
+        val visibleCategories = _categoryStyles.value.filter { it.visible }.map { it.key }.toSet()
         controller.pushOverlays(
             waypointsJson = OverlayGeoJson.waypoints(
-                _waypoints.value,
+                _waypoints.value.filter { it.category in visibleCategories },
                 _selectedWaypointId.value,
                 _categoryStyles.value.associate { it.key to it.hexColor },
             ),
@@ -327,15 +336,30 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             addMeasurePoint(point)
             return
         }
+        if (!_chromeVisible.value) {
+            // The first tap only brings the chrome back, as requested.
+            _chromeVisible.value = true
+            return
+        }
         val screen = controller.screenPosition(point)
         val waypointId = screen?.let { controller.waypointIdAt(it) }
         if (waypointId != null) {
             _selectedWaypointId.value = waypointId
             pushOverlays()
-        } else {
-            _selectedWaypointId.value = null
-            pushOverlays()
+            return
         }
+        _selectedWaypointId.value = null
+        pushOverlays()
+        // A short tap on empty map hides every panel and button.
+        _chromeVisible.value = false
+    }
+
+    fun setChromeVisible(visible: Boolean) {
+        _chromeVisible.value = visible
+    }
+
+    fun toggleChrome() {
+        _chromeVisible.value = !_chromeVisible.value
     }
 
     // ----------------------------------------------------------------- waypoints
@@ -352,7 +376,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         point: LatLon,
         name: String,
         note: String,
-        category: WaypointCategory,
+        category: String,
         elevation: Double? = null,
     ) {
         viewModelScope.launch {
@@ -405,6 +429,26 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             // Marker colours on the map come from the category style too.
             pushOverlays()
             _messages.tryEmit("دستهٔ «${style.label}» به‌روزرسانی شد")
+        }
+    }
+
+    /** Hides or shows every point of one category on the map. */
+    fun setCategoryVisible(style: WaypointCategoryStyle, visible: Boolean) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { db.upsertCategoryStyle(style.copy(visible = visible)) }
+            _categoryStyles.value = withContext(Dispatchers.IO) { db.readCategoryStyles() }
+            pushOverlays()
+        }
+    }
+
+    /** Deletes a category; its waypoints fall back to the general category. */
+    fun deleteCategoryStyle(style: WaypointCategoryStyle) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { db.deleteCategoryStyle(style.key) }
+            _categoryStyles.value = withContext(Dispatchers.IO) { db.readCategoryStyles() }
+            _waypoints.value = withContext(Dispatchers.IO) { db.readWaypoints() }
+            pushOverlays()
+            _messages.tryEmit("دستهٔ «${style.label}» حذف شد؛ نقاط آن به دستهٔ عمومی منتقل شدند")
         }
     }
 
@@ -547,8 +591,29 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     // ----------------------------------------------------------------- recording
 
+    /** Prepares a recording; the GPS starts only when the user presses شروع. */
+    fun armRecording() {
+        if (activeSession != null) {
+            _recordArmed.value = false
+            return
+        }
+        if (!locationProvider.hasPermission()) {
+            _messages.tryEmit("برای ثبت مسیر، دسترسی موقعیت مکانی لازم است")
+            return
+        }
+        _measure.value = MeasureUiState()
+        _selectedWaypointId.value = null
+        _recordArmed.value = true
+        pushOverlays()
+    }
+
+    fun cancelArmRecording() {
+        _recordArmed.value = false
+    }
+
     fun startRecording() {
         if (activeSession != null) return
+        _recordArmed.value = false
         if (!locationProvider.hasPermission()) {
             _messages.tryEmit("برای ثبت مسیر، دسترسی موقعیت مکانی لازم است")
             return

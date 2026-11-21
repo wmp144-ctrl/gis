@@ -75,9 +75,11 @@ class GeoMathTest {
         assertTrue(box.contains(isfahan))
         assertEquals(isfahan.lat, box.south, 1e-9)
 
-        assertTrue(formatDistance(850.0).contains("متر"))
-        assertTrue(formatDistance(1250.0).contains("کیلومتر"))
-        assertTrue(formatArea(25_000.0).contains("هکتار"))
+        assertTrue(formatDistance(850.0).contains(" m"))
+        assertTrue(formatDistance(1250.0).contains(" km"))
+        // Areas use squared units: m² below one square kilometre, km² above.
+        assertTrue(formatArea(25_000.0).contains("m²"))
+        assertTrue(formatArea(2_500_000.0).contains("km²"))
         assertTrue(formatCoordinate(tehran.lat, tehran.lon, CoordinateFormat.DMS).contains("°"))
         assertTrue(formatCoordinate(tehran.lat, tehran.lon, CoordinateFormat.UTM).contains("39"))
     }

@@ -90,7 +90,7 @@ class TrackAndExportTest {
     @Test
     fun gpxExportContainsWaypointsAndTracks() {
         val now = 1_700_000_000_000L
-        val waypoint = Waypoint("w", "چشمه & آب", "یادداشت", WaypointCategory.WATER, 35.7, 51.4, 1300.0, now, now)
+        val waypoint = Waypoint("w", "چشمه & آب", "یادداشت", WaypointCategory.WATER.key, 35.7, 51.4, 1300.0, now, now)
         val session = TrackSession("t", "t", now - 60_000) { now }
         session.addFix(fix(35.0, 51.0))
         session.addFix(fix(35.001, 51.0))
@@ -107,7 +107,7 @@ class TrackAndExportTest {
     @Test
     fun geoJsonExportIsParsable() {
         val now = 1_700_000_000_000L
-        val waypoint = Waypoint("w", "n", "", WaypointCategory.GENERAL, 35.7, 51.4, null, now, now)
+        val waypoint = Waypoint("w", "n", "", WaypointCategory.GENERAL.key, 35.7, 51.4, null, now, now)
         val exported = GeoFileCodec.waypointsToGeoJson(listOf(waypoint))
         val reparsed = GeoFileCodec.parse(exported)
         assertEquals(1, reparsed.waypoints.size)

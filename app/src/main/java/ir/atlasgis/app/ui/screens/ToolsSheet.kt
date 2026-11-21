@@ -60,12 +60,12 @@ fun ToolsSheet(
         contentColor = AtlasColors.TextPrimary,
         dragHandle = { BottomSheetDefaults.DragHandle(color = AtlasColors.Outline) },
     ) {
-        Column(Modifier.padding(horizontal = 18.dp).padding(bottom = 26.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 18.dp)) {
             SectionHeader(
                 title = "ابزارها",
                 subtitle = "اندازه‌گیری، ثبت مسیر، نقاط و مسیرهای ذخیره‌شده",
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
             ToolRow(
                 icon = Icons.Rounded.Straighten,
@@ -74,14 +74,14 @@ fun ToolsSheet(
                 accent = AtlasColors.Measure,
                 onClick = onMeasure,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             ToolRow(
                 icon = Icons.Rounded.Route,
                 title = "ثبت مسیر",
                 subtitle = when {
                     recordingPaused -> "ثبت متوقف شده — برای ادامه کارت پایین نقشه را ببینید"
                     recordingActive -> "در حال ثبت — کنترل توقف در پایین نقشه"
-                    else -> "مسیر حرکت را با GPS ضبط و ذخیره کنید"
+                    else -> "پس از زدن دکمهٔ شروع، مسیر با GPS ضبط می‌شود"
                 },
                 accent = AtlasColors.Track,
                 highlight = recordingActive,
@@ -123,13 +123,13 @@ private fun ToolRow(
         Row(
             modifier = Modifier
                 .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 12.dp),
+                .padding(horizontal = 10.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.foundation.layout.Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(13.dp))
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(accent.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center,
             ) {

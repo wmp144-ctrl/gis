@@ -51,7 +51,8 @@ data class Waypoint(
     val id: String,
     val name: String,
     val note: String,
-    val category: WaypointCategory,
+    /** Key of a [WaypointCategoryStyle]; categories can be added or removed at runtime. */
+    val category: String,
     val lat: Double,
     val lon: Double,
     val elevation: Double?,

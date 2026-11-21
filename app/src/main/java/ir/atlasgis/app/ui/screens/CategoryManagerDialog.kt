@@ -21,11 +21,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,23 +55,37 @@ private val CategoryColorChoices = listOf(
 ).map { it.toInt() }
 
 /**
- * Lets the user restyle the built-in waypoint categories (colour + icon). The
- * chosen style is used everywhere: map popup, list rows and the editor chips.
+ * Manages waypoint categories: create, rename, restyle, delete them and choose which
+ * ones are drawn on the map. Everything is persisted, so lists, chips and the map
+ * markers always agree.
  */
 @Composable
 fun CategoryManagerDialog(
     styles: List<WaypointCategoryStyle>,
     onDismiss: () -> Unit,
     onSave: (WaypointCategoryStyle) -> Unit,
+    onDelete: (WaypointCategoryStyle) -> Unit,
+    onVisibility: (WaypointCategoryStyle, Boolean) -> Unit,
 ) {
     var editingKey by remember { mutableStateOf<String?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<WaypointCategoryStyle?>(null) }
     val editing = styles.firstOrNull { it.key == editingKey }
 
     if (editing == null) {
         AlertDialog(
             onDismissRequest = onDismiss,
             containerColor = AtlasColors.SurfaceElevated,
-            title = { Text("دسته‌بندی نقاط", color = AtlasColors.TextPrimary) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("دسته‌بندی نقاط", color = AtlasColors.TextPrimary, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { creating = true }) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, tint = AtlasColors.Accent, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("دستهٔ جدید", color = AtlasColors.Accent, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            },
             text = {
                 Column(
                     Modifier
@@ -73,13 +93,18 @@ fun CategoryManagerDialog(
                         .verticalScroll(rememberScrollState()),
                 ) {
                     Text(
-                        "برای تغییر رنگ و آیکون هر دسته، روی آن بزنید.",
+                        "برای تغییر نام، رنگ و آیکون روی دسته بزنید. با آیکون چشم، نمایش نقاط آن دسته روی نقشه را روشن یا خاموش کنید.",
                         style = MaterialTheme.typography.labelSmall,
                         color = AtlasColors.TextMuted,
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
                     styles.forEach { style ->
-                        CategoryStyleRow(style = style, onClick = { editingKey = style.key })
+                        CategoryStyleRow(
+                            style = style,
+                            onClick = { editingKey = style.key },
+                            onVisibility = { onVisibility(style, !style.visible) },
+                            onDelete = { deleteTarget = style },
+                        )
                         Spacer(Modifier.height(6.dp))
                     }
                 }
@@ -96,68 +121,127 @@ fun CategoryManagerDialog(
             onSave = { updated -> onSave(updated); editingKey = null },
         )
     }
+
+    if (creating) {
+        NewCategoryDialog(
+            onDismiss = { creating = false },
+            onCreate = { style ->
+                onSave(style)
+                creating = false
+            },
+        )
+    }
+
+    deleteTarget?.let { style ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            containerColor = AtlasColors.SurfaceElevated,
+            title = { Text("حذف دسته", color = AtlasColors.TextPrimary) },
+            text = {
+                Text(
+                    "دستهٔ «${style.label}» حذف شود؟ نقاط این دسته حذف نمی‌شوند و به دستهٔ عمومی منتقل می‌شوند.",
+                    color = AtlasColors.TextSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onDelete(style); deleteTarget = null }) {
+                    Text("حذف", color = AtlasColors.Danger)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("انصراف", color = AtlasColors.TextSecondary)
+                }
+            },
+        )
+    }
 }
 
 @Composable
-private fun CategoryStyleRow(style: WaypointCategoryStyle, onClick: () -> Unit) {
+private fun CategoryStyleRow(
+    style: WaypointCategoryStyle,
+    onClick: () -> Unit,
+    onVisibility: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(AtlasColors.Surface)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(start = 10.dp, end = 2.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CategoryPreview(style = style, size = 34)
+        CategoryPreview(style = style, size = 32)
         Spacer(Modifier.width(10.dp))
         Text(
             text = style.label,
             style = MaterialTheme.typography.titleSmall,
-            color = AtlasColors.TextPrimary,
+            color = if (style.visible) AtlasColors.TextPrimary else AtlasColors.TextMuted,
             modifier = Modifier.weight(1f),
+            maxLines = 1,
         )
+        IconButton(onClick = onVisibility) {
+            Icon(
+                imageVector = if (style.visible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                contentDescription = if (style.visible) "پنهان‌کردن روی نقشه" else "نمایش روی نقشه",
+                tint = if (style.visible) AtlasColors.Accent else AtlasColors.TextMuted,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Rounded.Delete,
+                contentDescription = "حذف ${style.label}",
+                tint = AtlasColors.TextMuted,
+                modifier = Modifier.size(18.dp),
+            )
+        }
         Icon(
             Icons.Rounded.Edit,
             contentDescription = "ویرایش ${style.label}",
             tint = AtlasColors.TextMuted,
-            modifier = Modifier.size(17.dp),
+            modifier = Modifier.size(16.dp),
         )
+        Spacer(Modifier.width(6.dp))
     }
 }
 
+/** Dialog used both for a brand-new category and for editing an existing one. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CategoryStyleEditor(
-    style: WaypointCategoryStyle,
-    onBack: () -> Unit,
-    onSave: (WaypointCategoryStyle) -> Unit,
+fun NewCategoryDialog(
+    onDismiss: () -> Unit,
+    onCreate: (WaypointCategoryStyle) -> Unit,
 ) {
-    var color by remember(style.key) { mutableStateOf(style.color) }
-    var icon by remember(style.key) { mutableStateOf(style.icon) }
+    var label by remember { mutableStateOf("") }
+    var color by remember { mutableStateOf(CategoryColorChoices.first()) }
+    var icon by remember { mutableStateOf(WaypointCategoryStyle.ICON_PLACE) }
 
     AlertDialog(
-        onDismissRequest = onBack,
+        onDismissRequest = onDismiss,
         containerColor = AtlasColors.SurfaceElevated,
-        title = { Text("دستهٔ «${style.label}»", color = AtlasColors.TextPrimary) },
+        title = { Text("دستهٔ جدید", color = AtlasColors.TextPrimary) },
         text = {
             Column(
                 Modifier
                     .widthIn(max = 420.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CategoryPreview(style.copy(color = color, icon = icon), size = 42)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = style.label,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = AtlasColors.TextPrimary,
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it.take(24) },
+                    label = { Text("نام دسته") },
+                    placeholder = { Text("مثال: دکل مخابراتی") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = atlasTextFieldColors(),
+                    shape = RoundedCornerShape(12.dp),
+                )
+                Spacer(Modifier.height(12.dp))
                 Text("رنگ", style = MaterialTheme.typography.labelMedium, color = AtlasColors.TextSecondary)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -165,7 +249,7 @@ private fun CategoryStyleEditor(
                     CategoryColorChoices.forEach { choice ->
                         Box(
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(32.dp)
                                 .clip(CircleShape)
                                 .background(Color(choice))
                                 .border(
@@ -181,51 +265,141 @@ private fun CategoryStyleEditor(
                                     Icons.Rounded.Check,
                                     contentDescription = "رنگ انتخاب‌شده",
                                     tint = AtlasColors.Background,
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(16.dp),
                                 )
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
                 Text("آیکون", style = MaterialTheme.typography.labelMedium, color = AtlasColors.TextSecondary)
+                Spacer(Modifier.height(6.dp))
+                IconPicker(selected = icon, color = color, onSelect = { icon = it })
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onCreate(WaypointCategoryStyle.custom(label, color, icon)) },
+                enabled = label.isNotBlank(),
+            ) { Text("ساخت دسته", color = AtlasColors.Accent) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("انصراف", color = AtlasColors.TextSecondary) }
+        },
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IconPicker(selected: String, color: Int, onSelect: (String) -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CategoryIconCatalog.forEach { (key, vector) ->
+            val isSelected = key == selected
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(if (isSelected) Color(color).copy(alpha = 0.2f) else AtlasColors.Surface)
+                    .border(
+                        width = if (isSelected) 1.5.dp else 1.dp,
+                        color = if (isSelected) Color(color) else AtlasColors.Outline,
+                        shape = RoundedCornerShape(11.dp),
+                    )
+                    .clickable { onSelect(key) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = vector,
+                    contentDescription = null,
+                    tint = if (isSelected) Color(color) else AtlasColors.TextSecondary,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryStyleEditor(
+    style: WaypointCategoryStyle,
+    onBack: () -> Unit,
+    onSave: (WaypointCategoryStyle) -> Unit,
+) {
+    var label by remember(style.key) { mutableStateOf(style.label) }
+    var color by remember(style.key) { mutableStateOf(style.color) }
+    var icon by remember(style.key) { mutableStateOf(style.icon) }
+
+    AlertDialog(
+        onDismissRequest = onBack,
+        containerColor = AtlasColors.SurfaceElevated,
+        title = { Text("دستهٔ «${style.label}»", color = AtlasColors.TextPrimary) },
+        text = {
+            Column(
+                Modifier
+                    .widthIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CategoryPreview(style.copy(color = color, icon = icon), size = 38)
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedTextField(
+                        value = label,
+                        onValueChange = { label = it.take(24) },
+                        label = { Text("نام دسته") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        colors = atlasTextFieldColors(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("رنگ", style = MaterialTheme.typography.labelMedium, color = AtlasColors.TextSecondary)
                 Spacer(Modifier.height(8.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    CategoryIconCatalog.forEach { (key, vector) ->
-                        val selected = key == icon
+                    CategoryColorChoices.forEach { choice ->
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (selected) Color(color).copy(alpha = 0.2f) else AtlasColors.Surface,
-                                )
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(choice))
                                 .border(
-                                    width = if (selected) 1.5.dp else 1.dp,
-                                    color = if (selected) Color(color) else AtlasColors.Outline,
-                                    shape = RoundedCornerShape(12.dp),
+                                    width = if (choice == color) 3.dp else 1.dp,
+                                    color = if (choice == color) AtlasColors.TextPrimary else AtlasColors.Outline,
+                                    shape = CircleShape,
                                 )
-                                .clickable { icon = key },
+                                .clickable { color = choice },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(
-                                imageVector = vector,
-                                contentDescription = null,
-                                tint = if (selected) Color(color) else AtlasColors.TextSecondary,
-                                modifier = Modifier.size(20.dp),
-                            )
+                            if (choice == color) {
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    contentDescription = "رنگ انتخاب‌شده",
+                                    tint = AtlasColors.Background,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
                         }
                     }
                 }
+                Spacer(Modifier.height(14.dp))
+                Text("آیکون", style = MaterialTheme.typography.labelMedium, color = AtlasColors.TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                IconPicker(selected = icon, color = color, onSelect = { icon = it })
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(style.copy(color = color, icon = icon)) }) {
-                Text("ذخیره", color = AtlasColors.Accent)
-            }
+            TextButton(
+                onClick = {
+                    onSave(style.copy(label = label.trim().ifBlank { style.label }, color = color, icon = icon))
+                },
+            ) { Text("ذخیره", color = AtlasColors.Accent) }
         },
         dismissButton = {
             TextButton(onClick = onBack) { Text("بازگشت", color = AtlasColors.TextSecondary) }

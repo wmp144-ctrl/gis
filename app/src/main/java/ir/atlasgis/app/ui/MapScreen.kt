@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -17,8 +19,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -31,10 +31,10 @@ import ir.atlasgis.app.core.LatLon
 import ir.atlasgis.app.core.distanceMeters
 import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.data.GpsFix
-import ir.atlasgis.app.data.MapLayer
 import ir.atlasgis.app.data.MeasureMode
 import ir.atlasgis.app.data.RecordingState
 import ir.atlasgis.app.data.Waypoint
+import ir.atlasgis.app.data.WaypointCategoryStyle
 import ir.atlasgis.app.ui.components.GlassPanel
 import ir.atlasgis.app.ui.map.MapCanvas
 import ir.atlasgis.app.ui.map.MapController
@@ -63,7 +63,6 @@ fun MapScreen(viewModel: MapViewModel) {
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val selectedWaypointId by viewModel.selectedWaypointId.collectAsStateWithLifecycle()
     val measure by viewModel.measure.collectAsStateWithLifecycle()
-    val tool by viewModel.tool.collectAsStateWithLifecycle()
     val sheet by viewModel.sheet.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val followMode by viewModel.followMode.collectAsStateWithLifecycle()
@@ -73,6 +72,8 @@ fun MapScreen(viewModel: MapViewModel) {
     val showTracks by viewModel.showTracks.collectAsStateWithLifecycle()
     val gps by viewModel.gps.collectAsStateWithLifecycle()
     val categoryStyles by viewModel.categoryStyles.collectAsStateWithLifecycle()
+    val chromeVisible by viewModel.chromeVisible.collectAsStateWithLifecycle()
+    val recordArmed by viewModel.recordArmed.collectAsStateWithLifecycle()
     val cardsScroll = rememberScrollState()
 
     val recordingBadge by remember(viewModel) {
@@ -96,7 +97,7 @@ fun MapScreen(viewModel: MapViewModel) {
     val geoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::importGeoFile)
     }
-    var styleTarget by remember { mutableStateOf<MapLayer?>(null) }
+    var styleTarget by remember { mutableStateOf<ir.atlasgis.app.data.MapLayer?>(null) }
     val stylePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val target = styleTarget
         if (uri != null && target != null) viewModel.importLayerStyle(target, uri)
@@ -176,113 +177,27 @@ fun MapScreen(viewModel: MapViewModel) {
 
         MeasureLabelsThroughCamera(controller, measure)
 
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
+        // All chrome can be hidden with one short tap on the map. A second tap
+        // brings it back, so the map can use the whole screen.
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize(),
         ) {
-            MapTopBar(
-                layerSummary = activeLayerName,
-                layerCount = layers.size,
-                onLayers = { viewModel.openSheet(Sheet.LAYERS) },
-                onSettings = { viewModel.openSheet(Sheet.SETTINGS) },
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            )
-
-            Spacer(Modifier.weight(1f))
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding(),
             ) {
-                // Cards stack up (waypoint + recording + measure). On short screens or
-                // in landscape the fixed part must not push the dock off-screen, so the
-                // card area scrolls inside a bounded height.
+                // Top-left: scale and coordinate readout.
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(cardsScroll),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                        .align(Alignment.TopStart)
+                        .padding(start = 10.dp, top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    AnimatedVisibility(
-                        visible = selectedWaypoint != null,
-                        enter = expandVertically(),
-                        exit = shrinkVertically(),
-                    ) {
-                        selectedWaypoint?.let { waypoint ->
-                            WaypointCardLive(
-                                viewModel = viewModel,
-                                waypoint = waypoint,
-                                gpsFlow = viewModel.gps,
-                                onClose = { viewModel.selectWaypoint(null) },
-                                onEdit = { viewModel.startEditingWaypoint(waypoint) },
-                                onDelete = { deleteWaypointTarget = waypoint },
-                                onCenter = { viewModel.showWaypointOnMap(waypoint) },
-                            )
-                        }
-                    }
-
-                    RecordingHud(
-                        stateFlow = viewModel.recording,
-                        expanded = recordingCardExpanded,
-                        onCollapse = { recordingCardExpanded = false },
-                        onPause = viewModel::pauseRecording,
-                        onResume = viewModel::resumeRecording,
-                        onStop = viewModel::stopRecording,
-                    )
-
-                    AnimatedVisibility(
-                        visible = measure.active,
-                        enter = expandVertically(),
-                        exit = shrinkVertically(),
-                    ) {
-                        MeasureCard(
-                            state = measure,
-                            onModeChange = viewModel::setMeasureMode,
-                            onUndo = viewModel::undoMeasurePoint,
-                            onClear = viewModel::clearMeasure,
-                            onClose = viewModel::stopMeasure,
-                        )
-                    }
-                }
-
-                // When the recording card is closed the compact bar keeps the state
-                // visible and opens the card again, while the track keeps recording.
-                RecordingMiniHud(
-                    stateFlow = viewModel.recording,
-                    visible = !recordingCardExpanded,
-                    onExpand = { recordingCardExpanded = true },
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    Column {
-                        if (settings.showScaleBar) {
-                            ControllerScaleBar(controller)
-                        }
-                        val attribution = remember(layers) {
-                            layers.filter { it.visible }.maxByOrNull { it.sortOrder }?.attribution
-                        }
-                        if (attribution != null) {
-                            Text(
-                                text = attribution,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = AtlasColors.TextMuted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Spacer(Modifier.width(8.dp))
+                    if (settings.showScaleBar) ControllerScaleBar(controller)
                     if (settings.showCoordinateBar) {
                         CoordinateReadout(
                             controller = controller,
@@ -293,49 +208,126 @@ fun MapScreen(viewModel: MapViewModel) {
                     }
                 }
 
-                // Snackbars live in the sheet stack so they never cover the dock.
-                SnackbarHost(hostState = snackbarHostState) { data ->
-                    Snackbar(
-                        snackbarData = data,
-                        containerColor = AtlasColors.SurfaceElevated,
-                        contentColor = AtlasColors.TextPrimary,
-                        actionColor = AtlasColors.Accent,
-                        shape = RoundedCornerShape(14.dp),
+                // Top-right: compass, zoom, tools, locate.
+                SideControlsHud(
+                    controller = controller,
+                    following = followMode,
+                    toolsActive = false,
+                    onZoomIn = viewModel::zoomIn,
+                    onZoomOut = viewModel::zoomOut,
+                    onResetBearing = viewModel::resetBearing,
+                    onLocate = viewModel::toggleFollowMode,
+                    onTools = { viewModel.openSheet(Sheet.TOOLS) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 8.dp, top = 6.dp),
+                )
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 10.dp)
+                        .padding(bottom = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    // Cards stack up (waypoint + recording + measure) in a bounded,
+                    // scrollable area so they never push the bar off-screen.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 340.dp)
+                            .verticalScroll(cardsScroll),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        AnimatedVisibility(
+                            visible = selectedWaypoint != null,
+                            enter = expandVertically(),
+                            exit = shrinkVertically(),
+                        ) {
+                            selectedWaypoint?.let { waypoint ->
+                                WaypointCardLive(
+                                    viewModel = viewModel,
+                                    waypoint = waypoint,
+                                    gpsFlow = viewModel.gps,
+                                    onClose = { viewModel.selectWaypoint(null) },
+                                    onEdit = { viewModel.startEditingWaypoint(waypoint) },
+                                    onDelete = { deleteWaypointTarget = waypoint },
+                                    onCenter = { viewModel.showWaypointOnMap(waypoint) },
+                                )
+                            }
+                        }
+
+                        if (recordArmed && !recordingBadge.active) {
+                            RecordingStartCard(
+                                onStart = viewModel::startRecording,
+                                onCancel = viewModel::cancelArmRecording,
+                            )
+                        }
+
+                        RecordingHud(
+                            stateFlow = viewModel.recording,
+                            expanded = recordingCardExpanded,
+                            onCollapse = { recordingCardExpanded = false },
+                            onPause = viewModel::pauseRecording,
+                            onResume = viewModel::resumeRecording,
+                            onStop = viewModel::stopRecording,
+                        )
+
+                        AnimatedVisibility(
+                            visible = measure.active,
+                            enter = expandVertically(),
+                            exit = shrinkVertically(),
+                        ) {
+                            MeasureCard(
+                                state = measure,
+                                onModeChange = viewModel::setMeasureMode,
+                                onUndo = viewModel::undoMeasurePoint,
+                                onClear = viewModel::clearMeasure,
+                                onClose = viewModel::stopMeasure,
+                            )
+                        }
+                    }
+
+                    // When the recording card is closed the compact bar keeps the state
+                    // visible and opens the card again, while the track keeps recording.
+                    RecordingMiniHud(
+                        stateFlow = viewModel.recording,
+                        visible = !recordingCardExpanded,
+                        onExpand = { recordingCardExpanded = true },
+                    )
+
+                    SnackbarHost(hostState = snackbarHostState) { data ->
+                        Snackbar(
+                            snackbarData = data,
+                            containerColor = AtlasColors.SurfaceElevated,
+                            contentColor = AtlasColors.TextPrimary,
+                            actionColor = AtlasColors.Accent,
+                            shape = RoundedCornerShape(14.dp),
+                        )
+                    }
+
+                    MapBottomBar(
+                        layerSummary = activeLayerName,
+                        layerCount = layers.size,
+                        onLayers = { viewModel.openSheet(Sheet.LAYERS) },
+                        onSettings = { viewModel.openSheet(Sheet.SETTINGS) },
                     )
                 }
-
-                BottomDock(
-                    tool = tool,
-                    recordingActive = recordingBadge.active,
-                    onBrowse = { viewModel.stopMeasure() },
-                    onTools = { viewModel.openSheet(Sheet.TOOLS) },
-                )
             }
         }
-
-        SideControlsHud(
-            controller = controller,
-            following = followMode,
-            onZoomIn = viewModel::zoomIn,
-            onZoomOut = viewModel::zoomOut,
-            onResetBearing = viewModel::resetBearing,
-            onLocate = viewModel::toggleFollowMode,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .statusBarsPadding()
-                .padding(end = 8.dp, top = 76.dp),
-        )
 
         if (layers.isEmpty()) {
             Box(
                 Modifier
                     .align(Alignment.Center)
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 70.dp),
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 40.dp),
             ) {
                 EmptyMapsCard(
                     onImport = { mapPicker.launch(arrayOf("*/*")) },
-                    modifier = Modifier.padding(bottom = if (locationGranted) 0.dp else 160.dp),
+                    modifier = Modifier.padding(bottom = if (locationGranted) 0.dp else 130.dp),
                 )
             }
         }
@@ -345,7 +337,7 @@ fun MapScreen(viewModel: MapViewModel) {
                 Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 150.dp, start = 20.dp, end = 20.dp),
+                    .padding(bottom = 130.dp, start = 20.dp, end = 20.dp),
             ) {
                 PermissionGate(onRequest = {
                     permissionLauncher.launch(
@@ -366,7 +358,7 @@ fun MapScreen(viewModel: MapViewModel) {
         Sheet.TOOLS -> ToolsSheet(
             waypointCount = waypoints.size,
             trackCount = tracks.size,
-            recordingActive = recordingBadge.active,
+            recordingActive = recordingBadge.active || recordArmed,
             recordingPaused = recordingBadge.paused,
             onDismiss = viewModel::closeSheet,
             onMeasure = {
@@ -376,7 +368,7 @@ fun MapScreen(viewModel: MapViewModel) {
             onRecord = {
                 viewModel.closeSheet()
                 recordingCardExpanded = true
-                if (!recordingBadge.active) viewModel.startRecording()
+                if (!recordingBadge.active) viewModel.armRecording()
             },
             onWaypoints = { viewModel.openSheet(Sheet.WAYPOINTS) },
             onTracks = { viewModel.openSheet(Sheet.TRACKS) },
@@ -421,6 +413,8 @@ fun MapScreen(viewModel: MapViewModel) {
             },
             onImport = { geoPicker.launch(arrayOf("*/*")) },
             onCategoryStyleSave = viewModel::updateCategoryStyle,
+            onCategoryDelete = viewModel::deleteCategoryStyle,
+            onCategoryVisibility = viewModel::setCategoryVisible,
         )
 
         Sheet.TRACKS -> TracksSheet(
@@ -474,7 +468,9 @@ fun MapScreen(viewModel: MapViewModel) {
             existing = null,
             lat = point.lat,
             lon = point.lon,
+            styles = categoryStyles,
             onDismiss = viewModel::cancelPendingWaypoint,
+            onCreateCategory = viewModel::updateCategoryStyle,
             onSave = { name, note, category ->
                 viewModel.createWaypoint(point, name, note, category)
             },
@@ -486,7 +482,9 @@ fun MapScreen(viewModel: MapViewModel) {
             existing = waypoint,
             lat = waypoint.lat,
             lon = waypoint.lon,
+            styles = categoryStyles,
             onDismiss = viewModel::cancelEditingWaypoint,
+            onCreateCategory = viewModel::updateCategoryStyle,
             onSave = { name, note, category ->
                 viewModel.updateWaypoint(waypoint.copy(name = name, note = note, category = category))
             },
@@ -521,20 +519,24 @@ fun MapScreen(viewModel: MapViewModel) {
 private fun SideControlsHud(
     controller: MapController,
     following: Boolean,
+    toolsActive: Boolean,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onResetBearing: () -> Unit,
     onLocate: () -> Unit,
+    onTools: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val camera by controller.camera.collectAsStateWithLifecycle()
     MapSideControls(
         bearing = camera?.bearing ?: 0f,
         following = following,
+        toolsActive = toolsActive,
         onZoomIn = onZoomIn,
         onZoomOut = onZoomOut,
         onResetBearing = onResetBearing,
         onLocate = onLocate,
+        onTools = onTools,
         modifier = modifier,
     )
 }
@@ -544,7 +546,7 @@ private fun ControllerScaleBar(controller: MapController) {
     val camera by controller.camera.collectAsStateWithLifecycle()
     val metersPerPixel = camera?.metersPerPixel ?: 0.0
     GlassPanel(shape = RoundedCornerShape(10.dp)) {
-        Box(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+        Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             MapScaleBar(metersPerPixel)
         }
     }
@@ -606,10 +608,10 @@ private fun RecordingMiniHud(
     onExpand: () -> Unit,
 ) {
     val state by stateFlow.collectAsStateWithLifecycle()
-    androidx.compose.animation.AnimatedVisibility(
+    AnimatedVisibility(
         visible = visible && state.active,
-        enter = androidx.compose.animation.fadeIn(),
-        exit = androidx.compose.animation.fadeOut(),
+        enter = fadeIn(),
+        exit = fadeOut(),
     ) {
         RecordingMiniBar(state = state, onExpand = onExpand)
     }

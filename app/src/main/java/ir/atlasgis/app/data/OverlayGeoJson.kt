@@ -27,7 +27,7 @@ object OverlayGeoJson {
             sb.append(""","color":""")
             appendQuoted(
                 sb,
-                categoryColors[waypoint.category.key] ?: colorFor(waypoint.category),
+                categoryColors[waypoint.category] ?: colorFor(waypoint.category),
             )
             sb.append(""","name":""")
             appendQuoted(sb, waypoint.name)
@@ -129,14 +129,14 @@ object OverlayGeoJson {
         return sb.toString()
     }
 
-    fun colorFor(category: WaypointCategory): String = when (category) {
-        WaypointCategory.GENERAL -> "#3ED598"
-        WaypointCategory.WATER -> "#5FB8FF"
-        WaypointCategory.FOOD -> "#FFC15E"
-        WaypointCategory.CAMP -> "#B98CFF"
-        WaypointCategory.HAZARD -> "#FF6B6B"
-        WaypointCategory.PARKING -> "#7C8CFF"
-        WaypointCategory.VIEW -> "#FF9F45"
+    fun colorFor(categoryKey: String): String = when (categoryKey) {
+        WaypointCategory.WATER.key -> "#5FB8FF"
+        WaypointCategory.FOOD.key -> "#FFC15E"
+        WaypointCategory.CAMP.key -> "#B98CFF"
+        WaypointCategory.HAZARD.key -> "#FF6B6B"
+        WaypointCategory.PARKING.key -> "#7C8CFF"
+        WaypointCategory.VIEW.key -> "#FF9F45"
+        else -> "#3ED598"
     }
 
     /** Writes a GeoJSON position: [lon,lat] */

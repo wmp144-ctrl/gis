@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import ir.atlasgis.app.core.CoordinateFormat
 import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.data.Waypoint
-import ir.atlasgis.app.data.WaypointCategory
+import ir.atlasgis.app.data.WaypointCategoryStyle
 import ir.atlasgis.app.ui.ImportUiState
 import ir.atlasgis.app.ui.theme.AtlasColors
 
@@ -43,12 +43,17 @@ fun WaypointEditorDialog(
     existing: Waypoint?,
     lat: Double,
     lon: Double,
+    styles: List<WaypointCategoryStyle>,
     onDismiss: () -> Unit,
-    onSave: (name: String, note: String, category: WaypointCategory) -> Unit,
+    onCreateCategory: (WaypointCategoryStyle) -> Unit,
+    onSave: (name: String, note: String, category: String) -> Unit,
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var note by remember { mutableStateOf(existing?.note ?: "") }
-    var category by remember { mutableStateOf(existing?.category ?: WaypointCategory.GENERAL) }
+    var category by remember {
+        mutableStateOf(existing?.category ?: styles.firstOrNull()?.key ?: "general")
+    }
+    var creatingCategory by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -92,10 +97,30 @@ fun WaypointEditorDialog(
                     colors = atlasTextFieldColors(),
                     shape = RoundedCornerShape(12.dp),
                 )
-                Spacer(Modifier.height(14.dp))
-                Text("دسته‌بندی", style = MaterialTheme.typography.labelMedium, color = AtlasColors.TextSecondary)
-                Spacer(Modifier.height(8.dp))
-                FlowRowCategories(selected = category, onSelect = { category = it })
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "دسته‌بندی",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = AtlasColors.TextSecondary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "افزودن دستهٔ جدید",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AtlasColors.Accent,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable { creatingCategory = true }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                FlowRowCategories(
+                    styles = styles,
+                    selected = category,
+                    onSelect = { category = it },
+                )
             }
         },
         confirmButton = {
@@ -107,13 +132,25 @@ fun WaypointEditorDialog(
             TextButton(onClick = onDismiss) { Text("انصراف", color = AtlasColors.TextSecondary) }
         },
     )
+
+    if (creatingCategory) {
+        NewCategoryDialog(
+            onDismiss = { creatingCategory = false },
+            onCreate = { style ->
+                onCreateCategory(style)
+                category = style.key
+                creatingCategory = false
+            },
+        )
+    }
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun FlowRowCategories(
-    selected: WaypointCategory,
-    onSelect: (WaypointCategory) -> Unit,
+    styles: List<WaypointCategoryStyle>,
+    selected: String,
+    onSelect: (String) -> Unit,
 ) {
     // Wrapping chips stay inside the dialog on narrow phones and at large font scales.
     FlowRow(
@@ -121,33 +158,28 @@ private fun FlowRowCategories(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         maxItemsInEachRow = 4,
     ) {
-        WaypointCategory.entries.forEach { category ->
-            val isSelected = category == selected
+        styles.forEach { style ->
+            val isSelected = style.key == selected
+            val color = androidx.compose.ui.graphics.Color(style.color)
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(
-                        if (isSelected) {
-                            categoryColor(category).copy(alpha = 0.2f)
-                        } else {
-                            AtlasColors.Surface
-                        },
-                    )
-                    .clickable { onSelect(category) }
+                    .background(if (isSelected) color.copy(alpha = 0.2f) else AtlasColors.Surface)
+                    .clickable { onSelect(style.key) }
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    imageVector = categoryIcon(category),
+                    imageVector = categoryIconFor(style.icon),
                     contentDescription = null,
-                    tint = if (isSelected) categoryColor(category) else AtlasColors.TextMuted,
+                    tint = if (isSelected) color else AtlasColors.TextMuted,
                     modifier = Modifier.size(14.dp),
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = categoryLabel(category),
+                    text = style.label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isSelected) categoryColor(category) else AtlasColors.TextSecondary,
+                    color = if (isSelected) color else AtlasColors.TextSecondary,
                 )
             }
         }

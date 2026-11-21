@@ -87,7 +87,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
                 key TEXT PRIMARY KEY NOT NULL,
                 label TEXT NOT NULL,
                 color INTEGER NOT NULL,
-                icon TEXT NOT NULL
+                icon TEXT NOT NULL,
+                visible INTEGER NOT NULL DEFAULT 1
             )
             """.trimIndent(),
         )
@@ -114,6 +115,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
             )
             seedCategoryStyles(db)
         }
+        if (oldVersion < 5) {
+            db.execSQL(
+                "ALTER TABLE waypoint_categories ADD COLUMN visible INTEGER NOT NULL DEFAULT 1",
+            )
+        }
     }
 
     /** Missing rows only: an upgraded database keeps the user's own colours/icons. */
@@ -129,22 +135,27 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
     }
 
     fun readCategoryStyles(): List<WaypointCategoryStyle> = synchronized(writeLock) {
-        val rows = HashMap<String, WaypointCategoryStyle>()
+        val rows = LinkedHashMap<String, WaypointCategoryStyle>()
         readableDatabase.query(
             "waypoint_categories", null, null, null, null, null, "rowid ASC",
         ).use { cursor ->
             while (cursor.moveToNext()) {
+                val visibleIndex = cursor.getColumnIndex("visible")
                 val style = WaypointCategoryStyle(
                     key = cursor.getString(cursor.getColumnIndexOrThrow("key")),
                     label = cursor.getString(cursor.getColumnIndexOrThrow("label")),
                     color = cursor.getInt(cursor.getColumnIndexOrThrow("color")),
                     icon = cursor.getString(cursor.getColumnIndexOrThrow("icon")),
+                    visible = visibleIndex < 0 || cursor.getInt(visibleIndex) == 1,
                 )
                 rows[style.key] = style
             }
         }
-        // Keep the canonical order and include defaults for rows an old build never seeded.
-        WaypointCategoryStyle.defaults().map { default -> rows[default.key] ?: default }
+        // Include defaults a previous build never seeded, but never drop user categories.
+        val ordered = ArrayList<WaypointCategoryStyle>(rows.size + WaypointCategoryStyle.defaults().size)
+        WaypointCategoryStyle.defaults().forEach { default -> ordered.add(rows.remove(default.key) ?: default) }
+        ordered.addAll(rows.values)
+        ordered
     }
 
     fun upsertCategoryStyle(style: WaypointCategoryStyle) = synchronized(writeLock) {
@@ -154,11 +165,27 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         Unit
     }
 
+    /** Removes a category and moves its points to the general category. */
+    fun deleteCategoryStyle(key: String) = synchronized(writeLock) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("waypoint_categories", "key = ?", arrayOf(key))
+            val values = ContentValues().apply { put("category", WaypointCategory.GENERAL.key) }
+            db.update("waypoints", values, "category = ?", arrayOf(key))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        Unit
+    }
+
     private fun WaypointCategoryStyle.toValues(): ContentValues = ContentValues().apply {
         put("key", key)
         put("label", label)
         put("color", color)
         put("icon", icon)
+        put("visible", if (visible) 1 else 0)
     }
 
     // ---------------------------------------------------------------- layers
@@ -353,7 +380,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         put("id", id)
         put("name", name)
         put("note", note)
-        put("category", category.key)
+        put("category", category)
         put("lat", lat)
         put("lon", lon)
         put("elevation", elevation)
@@ -367,7 +394,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
             id = getString(getColumnIndexOrThrow("id")),
             name = getString(getColumnIndexOrThrow("name")),
             note = getString(getColumnIndexOrThrow("note")),
-            category = WaypointCategory.fromKey(getString(getColumnIndexOrThrow("category"))),
+            category = getString(getColumnIndexOrThrow("category")),
             lat = getDouble(getColumnIndexOrThrow("lat")),
             lon = getDouble(getColumnIndexOrThrow("lon")),
             elevation = if (isNull(elevationIndex)) null else getDouble(elevationIndex),
@@ -409,7 +436,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
 
     companion object {
         private const val NAME = "atlasgis.db"
-        private const val VERSION = 4
+        private const val VERSION = 5
 
         fun newId(): String = UUID.randomUUID().toString()
 

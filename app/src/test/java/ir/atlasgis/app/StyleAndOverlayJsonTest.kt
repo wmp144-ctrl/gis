@@ -151,8 +151,8 @@ class StyleAndOverlayJsonTest {
     fun waypointGeoJsonCarriesIdColourAndSelection() {
         val now = 1_700_000_000_000L
         val waypoints = listOf(
-            Waypoint("a", "چشمه", "", WaypointCategory.WATER, 35.6, 51.4, null, now, now),
-            Waypoint("b", "خطر", "note", WaypointCategory.HAZARD, 35.7, 51.5, 1200.0, now, now),
+            Waypoint("a", "چشمه", "", WaypointCategory.WATER.key, 35.6, 51.4, null, now, now),
+            Waypoint("b", "خطر", "note", WaypointCategory.HAZARD.key, 35.7, 51.5, 1200.0, now, now),
         )
         val json = JSONObject(OverlayGeoJson.waypoints(waypoints, "b"))
         val features = json.getJSONArray("features")

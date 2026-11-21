@@ -2,6 +2,7 @@ package ir.atlasgis.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -55,6 +56,8 @@ fun WaypointsSheet(
     onExport: () -> Unit,
     onImport: () -> Unit,
     onCategoryStyleSave: (WaypointCategoryStyle) -> Unit,
+    onCategoryDelete: (WaypointCategoryStyle) -> Unit,
+    onCategoryVisibility: (WaypointCategoryStyle, Boolean) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var manageCategories by remember { mutableStateOf(false) }
@@ -78,8 +81,8 @@ fun WaypointsSheet(
     ) {
         Column(
             Modifier
-                .fillMaxHeight(0.9f)
-                .padding(horizontal = 18.dp),
+                .fillMaxHeight(0.96f)
+                .padding(horizontal = 12.dp),
         ) {
             SectionHeader(
                 title = "نقاط ذخیره‌شده",
@@ -112,7 +115,44 @@ fun WaypointsSheet(
                 shape = RoundedCornerShape(14.dp),
                 colors = atlasTextFieldColors(),
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
+            // One-tap filter: only the selected categories are drawn on the map.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                categoryStyles.forEach { style ->
+                    val color = Color(style.color)
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(
+                                if (style.visible) color.copy(alpha = 0.18f) else AtlasColors.SurfaceElevated,
+                            )
+                            .clickable { onCategoryVisibility(style, !style.visible) }
+                            .padding(horizontal = 9.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = categoryIconFor(style.icon),
+                            contentDescription = null,
+                            tint = if (style.visible) color else AtlasColors.TextMuted,
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = style.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (style.visible) color else AtlasColors.TextMuted,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             if (filtered.isEmpty()) {
                 Box(Modifier.weight(1f)) {
                     Text(
@@ -166,6 +206,8 @@ fun WaypointsSheet(
             styles = categoryStyles,
             onDismiss = { manageCategories = false },
             onSave = onCategoryStyleSave,
+            onDelete = onCategoryDelete,
+            onVisibility = onCategoryVisibility,
         )
     }
 }
@@ -253,8 +295,8 @@ fun TracksSheet(
     ) {
         Column(
             Modifier
-                .fillMaxHeight(0.9f)
-                .padding(horizontal = 18.dp),
+                .fillMaxHeight(0.96f)
+                .padding(horizontal = 12.dp),
         ) {
             SectionHeader(
                 title = "مسیرهای ثبت‌شده",
@@ -548,10 +590,10 @@ fun SettingsSheet(
     ) {
         Column(
             Modifier
-                .fillMaxHeight(0.92f)
-                .padding(horizontal = 18.dp)
+                .fillMaxHeight(0.96f)
+                .padding(horizontal = 12.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 28.dp),
+                .padding(bottom = 20.dp),
         ) {
             SectionHeader(title = "تنظیمات", subtitle = "نمایش مختصات و رفتار نقشه")
             Spacer(Modifier.height(14.dp))
@@ -586,7 +628,7 @@ fun SettingsSheet(
             )
             SwitchRow(
                 title = "نمایش مقیاس",
-                description = "نوار مقیاس در پایین نقشه",
+                description = "نوار مقیاس در بالای نقشه",
                 checked = settings.showScaleBar,
                 onCheckedChange = onScaleBar,
             )

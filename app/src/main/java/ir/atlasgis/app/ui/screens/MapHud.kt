@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import ir.atlasgis.app.core.formatArea
 import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.core.formatDistance
+import ir.atlasgis.app.core.formatDistanceShort
 import ir.atlasgis.app.core.formatDuration
 import ir.atlasgis.app.core.formatSpeed
 import ir.atlasgis.app.core.niceScaleDistance
@@ -43,41 +44,46 @@ import ir.atlasgis.app.data.GpsFix
 import ir.atlasgis.app.data.MeasureMode
 import ir.atlasgis.app.data.RecordingState
 import ir.atlasgis.app.data.Waypoint
-import ir.atlasgis.app.data.WaypointCategory
 import ir.atlasgis.app.ui.MeasureUiState
-import ir.atlasgis.app.ui.Tool
 import ir.atlasgis.app.ui.components.GlassPanel
 import ir.atlasgis.app.ui.components.GradientBadge
 import ir.atlasgis.app.ui.components.RoundIconButton
 import ir.atlasgis.app.ui.components.StatBlock
 import ir.atlasgis.app.ui.components.StatusChip
-import ir.atlasgis.app.ui.components.ToolPill
 import ir.atlasgis.app.ui.theme.AtlasColors
 import kotlin.math.roundToInt
 
+/**
+ * Compact bar pinned to the bottom of the map. It replaces the old top bar so the
+ * upper edge stays free for the scale and the map controls.
+ */
 @Composable
-fun MapTopBar(
+fun MapBottomBar(
     layerSummary: String,
     layerCount: Int,
     onLayers: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    GlassPanel(modifier = modifier.fillMaxWidth()) {
+    GlassPanel(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GradientBadge(Icons.Rounded.Map)
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = "AtlasGIS",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     color = AtlasColors.TextPrimary,
                 )
                 Text(
-                    text = if (layerCount > 0) "$layerSummary · ${layerCount.toString().toPersianDigits()} لایه" else "نقشه‌ای بارگذاری نشده",
+                    text = if (layerCount > 0) {
+                        "$layerSummary · ${layerCount.toString().toPersianDigits()} لایه"
+                    } else {
+                        "نقشه‌ای بارگذاری نشده"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = AtlasColors.TextMuted,
                     maxLines = 1,
@@ -90,31 +96,34 @@ fun MapTopBar(
     }
 }
 
+/** Zoom, compass, locate and the tools entry, stacked in the top-right corner. */
 @Composable
 fun MapSideControls(
     bearing: Float,
     following: Boolean,
+    toolsActive: Boolean,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onResetBearing: () -> Unit,
     onLocate: () -> Unit,
+    onTools: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    GlassPanel(modifier = modifier) {
+    GlassPanel(modifier = modifier, shape = RoundedCornerShape(20.dp)) {
         Column(
-            modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp),
+            modifier = Modifier.padding(vertical = 3.dp, horizontal = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .clickable(onClick = onResetBearing),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
                     Modifier
-                        .size(30.dp)
+                        .size(28.dp)
                         .rotate(-bearing),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -122,55 +131,27 @@ fun MapSideControls(
                         imageVector = Icons.Rounded.Navigation,
                         contentDescription = "جهت شمال",
                         tint = if (bearing > 1f) AtlasColors.Accent else AtlasColors.TextSecondary,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(19.dp),
                     )
                 }
             }
-            HorizontalDivider(color = AtlasColors.Outline, modifier = Modifier.width(22.dp))
+            HorizontalDivider(color = AtlasColors.Outline, modifier = Modifier.width(20.dp))
             RoundIconButton(Icons.Rounded.Add, "بزرگ‌نمایی", onZoomIn)
             RoundIconButton(Icons.Rounded.Remove, "کوچک‌نمایی", onZoomOut)
-            HorizontalDivider(color = AtlasColors.Outline, modifier = Modifier.width(22.dp))
+            RoundIconButton(
+                icon = Icons.Rounded.GridView,
+                contentDescription = "ابزارها",
+                onClick = onTools,
+                tint = if (toolsActive) AtlasColors.Accent else AtlasColors.TextPrimary,
+                background = if (toolsActive) AtlasColors.AccentSoft else Color.Transparent,
+            )
+            HorizontalDivider(color = AtlasColors.Outline, modifier = Modifier.width(20.dp))
             RoundIconButton(
                 icon = Icons.Rounded.MyLocation,
                 contentDescription = "موقعیت من",
                 onClick = onLocate,
                 tint = if (following) AtlasColors.Accent else AtlasColors.TextPrimary,
                 background = if (following) AtlasColors.AccentSoft else Color.Transparent,
-            )
-        }
-    }
-}
-
-@Composable
-fun BottomDock(
-    tool: Tool,
-    recordingActive: Boolean,
-    onBrowse: () -> Unit,
-    onTools: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    GlassPanel(modifier = modifier) {
-        Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            ToolPill(
-                icon = Icons.Rounded.Explore,
-                label = "مرور",
-                selected = tool == Tool.BROWSE && !recordingActive,
-                onClick = onBrowse,
-                modifier = Modifier.weight(1f),
-            )
-            // The map screen keeps a single entry point; measurement, recording and
-            // waypoints all live in this sheet so the map stays uncluttered.
-            ToolPill(
-                icon = Icons.Rounded.GridView,
-                label = "ابزارها",
-                selected = tool != Tool.BROWSE || recordingActive,
-                onClick = onTools,
-                modifier = Modifier.weight(1f),
-                badgeColor = if (recordingActive) AtlasColors.Danger else null,
             )
         }
     }
@@ -198,7 +179,7 @@ fun MeasureCard(
         } میانگین هر ضلع"
     }
     GlassPanel(modifier = modifier.fillMaxWidth(), borderColor = AtlasColors.Measure.copy(alpha = 0.5f)) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = if (state.mode == MeasureMode.DISTANCE) "اندازه‌گیری مسافت" else "اندازه‌گیری مساحت",
@@ -212,18 +193,20 @@ fun MeasureCard(
                     onSelect = onModeChange,
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = primaryValue,
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
                 color = AtlasColors.TextPrimary,
             )
             Text(
                 text = secondaryLabel,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = AtlasColors.TextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 HudActionButton(
                     "واگرد",
@@ -234,6 +217,43 @@ fun MeasureCard(
                 HudActionButton("پاک‌کردن", Icons.Rounded.Delete, onClear, enabled = state.points.isNotEmpty())
                 Spacer(Modifier.weight(1f))
                 HudActionButton("پایان", Icons.Rounded.Check, onClose, accent = AtlasColors.Measure)
+            }
+        }
+    }
+}
+
+/** Shown before anything is recorded: the user decides when the GPS starts. */
+@Composable
+fun RecordingStartCard(
+    onStart: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    GlassPanel(modifier = modifier.fillMaxWidth(), borderColor = AtlasColors.Track.copy(alpha = 0.55f)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Route, contentDescription = null, tint = AtlasColors.Track, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(7.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "آمادهٔ ثبت مسیر",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = AtlasColors.Track,
+                    )
+                    Text(
+                        text = "با زدن شروع، ضبط GPS آغاز می‌شود",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AtlasColors.TextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                RoundIconButton(Icons.Rounded.Close, "انصراف", onCancel)
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HudActionButton("شروع", Icons.Rounded.PlayArrow, onStart, accent = AtlasColors.Track)
+                Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -255,7 +275,7 @@ fun RecordingCard(
         label = "pulseAlpha",
     )
     GlassPanel(modifier = modifier.fillMaxWidth(), borderColor = AtlasColors.Track.copy(alpha = 0.55f)) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
@@ -284,14 +304,14 @@ fun RecordingCard(
                     tint = AtlasColors.TextSecondary,
                 )
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             Row {
                 StatBlock("مسافت", formatDistance(state.distanceMeters), Modifier.weight(1f))
                 StatBlock("سرعت", formatSpeed(state.currentSpeedMps), Modifier.weight(1f))
                 StatBlock("صعود", formatDistance(state.ascentMeters), Modifier.weight(1f))
                 StatBlock("نقاط", state.pointCount.toString().toPersianDigits(), Modifier.weight(1f))
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (state.paused) {
                     HudActionButton("ادامه", Icons.Rounded.PlayArrow, onResume, accent = AtlasColors.Accent)
@@ -319,7 +339,7 @@ fun RecordingMiniBar(
         Row(
             modifier = Modifier
                 .clickable(onClick = onExpand)
-                .padding(horizontal = 12.dp, vertical = 9.dp),
+                .padding(horizontal = 12.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -336,7 +356,7 @@ fun RecordingMiniBar(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                text = "${formatDistance(state.distanceMeters)} · ${formatDuration(state.movingSeconds)}",
+                text = "${formatDistanceShort(state.distanceMeters)} · ${formatDuration(state.movingSeconds)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = AtlasColors.TextSecondary,
             )
@@ -362,12 +382,12 @@ fun WaypointCard(
     modifier: Modifier = Modifier,
 ) {
     GlassPanel(modifier = modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(categoryColor(waypoint.category).copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -375,14 +395,14 @@ fun WaypointCard(
                         imageVector = categoryIcon(waypoint.category),
                         contentDescription = null,
                         tint = categoryColor(waypoint.category),
-                        modifier = Modifier.size(19.dp),
+                        modifier = Modifier.size(17.dp),
                     )
                 }
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(9.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = waypoint.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         color = AtlasColors.TextPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -393,21 +413,23 @@ fun WaypointCard(
                         }",
                         style = MaterialTheme.typography.labelSmall,
                         color = AtlasColors.TextMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 RoundIconButton(Icons.Rounded.Close, "بستن", onClose)
             }
             if (waypoint.note.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = waypoint.note,
                     style = MaterialTheme.typography.bodySmall,
                     color = AtlasColors.TextSecondary,
-                    maxLines = 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 HudActionButton("نمایش روی نقشه", Icons.Rounded.MyLocation, onCenter)
                 Spacer(Modifier.weight(1f))
@@ -428,20 +450,21 @@ fun HudActionButton(
 ) {
     Row(
         modifier = Modifier
-            .heightIn(min = 40.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .heightIn(min = 38.dp)
+            .clip(RoundedCornerShape(11.dp))
             .background(accent.copy(alpha = if (enabled) 0.12f else 0.05f))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Decorative: the label next to it is the accessible name.
-        Icon(icon, contentDescription = null, tint = if (enabled) accent else AtlasColors.TextMuted, modifier = Modifier.size(16.dp))
+        Icon(icon, contentDescription = null, tint = if (enabled) accent else AtlasColors.TextMuted, modifier = Modifier.size(15.dp))
         Spacer(Modifier.width(5.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = if (enabled) accent else AtlasColors.TextMuted,
+            maxLines = 1,
         )
     }
 }
@@ -456,7 +479,7 @@ fun SegmentedChip(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .background(AtlasColors.SurfaceElevated)
-            .padding(3.dp),
+            .padding(2.dp),
     ) {
         options.forEach { (label, mode) ->
             val isSelected = mode == selected
@@ -468,7 +491,7 @@ fun SegmentedChip(
                     .clip(RoundedCornerShape(50))
                     .background(if (isSelected) AtlasColors.Measure else Color.Transparent)
                     .clickable { onSelect(mode) }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
             )
         }
     }
@@ -478,24 +501,24 @@ fun SegmentedChip(
 fun MapScaleBar(metersPerPixel: Double, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
     if (metersPerPixel <= 0.0) return
-    val targetPx = with(density) { 84.dp.toPx() }.toDouble()
+    val targetPx = with(density) { 76.dp.toPx() }.toDouble()
     val distance = niceScaleDistance(metersPerPixel * targetPx)
     val barPx = (distance / metersPerPixel).toFloat()
     val barDp = with(density) { barPx.toDp() }
 
     Column(modifier = modifier, horizontalAlignment = Alignment.Start) {
         Text(
-            text = formatDistance(distance),
+            text = formatDistanceShort(distance),
             style = MaterialTheme.typography.labelSmall,
-            color = AtlasColors.TextSecondary,
+            color = AtlasColors.TextPrimary,
         )
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(2.dp))
         Canvas(
             Modifier
-                .width(barDp.coerceIn(30.dp, 120.dp))
-                .height(7.dp),
+                .width(barDp.coerceIn(30.dp, 110.dp))
+                .height(6.dp),
         ) {
-            val stroke = 1.6.dp.toPx()
+            val stroke = 1.5.dp.toPx()
             drawLine(
                 color = AtlasColors.TextPrimary,
                 start = Offset(0f, size.height - stroke),
@@ -505,13 +528,13 @@ fun MapScaleBar(metersPerPixel: Double, modifier: Modifier = Modifier) {
             )
             drawLine(
                 color = AtlasColors.TextPrimary,
-                start = Offset(0f, size.height - 7.dp.toPx()),
+                start = Offset(0f, size.height - 6.dp.toPx()),
                 end = Offset(0f, size.height),
                 strokeWidth = stroke,
             )
             drawLine(
                 color = AtlasColors.TextPrimary,
-                start = Offset(size.width, size.height - 7.dp.toPx()),
+                start = Offset(size.width, size.height - 6.dp.toPx()),
                 end = Offset(size.width, size.height),
                 strokeWidth = stroke,
             )
@@ -531,16 +554,16 @@ fun CoordinateBar(
             Row(
                 modifier = Modifier
                     .clickable(onClick = onCycleFormat)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     Icons.Rounded.PinDrop,
                     contentDescription = null,
                     tint = AtlasColors.TextMuted,
-                    modifier = Modifier.size(13.dp),
+                    modifier = Modifier.size(12.dp),
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(5.dp))
                 Text(
                     text = coordinateText,
                     style = MaterialTheme.typography.labelSmall,
@@ -550,7 +573,7 @@ fun CoordinateBar(
             }
         }
         if (gps != null) {
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(5.dp))
             StatusChip(
                 text = AccuracyText(gps),
                 icon = Icons.Rounded.SatelliteAlt,
@@ -563,20 +586,20 @@ fun CoordinateBar(
 private fun AccuracyText(gps: GpsFix): String {
     val accuracy = gps.accuracyMeters.roundToInt().toString().toPersianDigits()
     val satellites = gps.satellites.toString().toPersianDigits()
-    return "$satellites ماهواره · ±$accuracy م"
+    return "$satellites ماهواره · ±$accuracy m"
 }
 
 @Composable
 fun EmptyMapsCard(onImport: () -> Unit, modifier: Modifier = Modifier) {
     GlassPanel(modifier = modifier) {
         Column(
-            modifier = Modifier.padding(horizontal = 22.dp, vertical = 24.dp),
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 Modifier
-                    .size(58.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
                     .background(AtlasColors.AccentSoft),
                 contentAlignment = Alignment.Center,
             ) {
@@ -584,34 +607,35 @@ fun EmptyMapsCard(onImport: () -> Unit, modifier: Modifier = Modifier) {
                     Icons.Rounded.Map,
                     contentDescription = null,
                     tint = AtlasColors.Accent,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = "نقشه آفلاین خود را اضافه کنید",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleSmall,
                 color = AtlasColors.TextPrimary,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = "فایل MBTiles (رستری یا برداری) را از حافظه دستگاه انتخاب کنید؛ پردازش و نمایش کاملاً آفلاین است.",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = AtlasColors.TextMuted,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Button(
                 onClick = onImport,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = AtlasColors.Accent,
                     contentColor = AtlasColors.OnAccent,
                 ),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
             ) {
-                Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(7.dp))
-                Text("افزودن فایل MBTiles", style = MaterialTheme.typography.labelLarge)
+                Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("افزودن فایل MBTiles", style = MaterialTheme.typography.labelMedium)
             }
         }
     }

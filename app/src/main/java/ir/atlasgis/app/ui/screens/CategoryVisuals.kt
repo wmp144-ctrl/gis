@@ -23,7 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import ir.atlasgis.app.data.WaypointCategory
 import ir.atlasgis.app.data.WaypointCategoryStyle
 
 /** Category styling supplied by the ViewModel; defaults keep previews/tests working. */
@@ -54,16 +53,22 @@ val CategoryIconCatalog: List<Pair<String, ImageVector>> = listOf(
 fun categoryIconFor(iconKey: String): ImageVector =
     CategoryIconCatalog.firstOrNull { it.first == iconKey }?.second ?: Icons.Rounded.Place
 
+/** Looks up a category by key; unknown keys (e.g. a deleted category) degrade gracefully. */
 @Composable
-fun categoryStyle(category: WaypointCategory): WaypointCategoryStyle =
-    LocalWaypointCategoryStyles.current.firstOrNull { it.key == category.key }
-        ?: WaypointCategoryStyle.defaultFor(category)
+fun categoryStyle(categoryKey: String): WaypointCategoryStyle =
+    LocalWaypointCategoryStyles.current.firstOrNull { it.key == categoryKey }
+        ?: WaypointCategoryStyle(
+            key = categoryKey,
+            label = "عمومی",
+            color = 0xFF3ED598.toInt(),
+            icon = WaypointCategoryStyle.ICON_PLACE,
+        )
 
 @Composable
-fun categoryLabel(category: WaypointCategory): String = categoryStyle(category).label
+fun categoryLabel(categoryKey: String): String = categoryStyle(categoryKey).label
 
 @Composable
-fun categoryIcon(category: WaypointCategory): ImageVector = categoryIconFor(categoryStyle(category).icon)
+fun categoryIcon(categoryKey: String): ImageVector = categoryIconFor(categoryStyle(categoryKey).icon)
 
 @Composable
-fun categoryColor(category: WaypointCategory): Color = Color(categoryStyle(category).color)
+fun categoryColor(categoryKey: String): Color = Color(categoryStyle(categoryKey).color)

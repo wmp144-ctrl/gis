@@ -12,6 +12,8 @@ data class WaypointCategoryStyle(
     val label: String,
     val color: Int,
     val icon: String,
+    /** Whether this category's points are drawn on the map (per-category filter). */
+    val visible: Boolean = true,
 ) {
     /** `#RRGGBB` for MapLibre expressions and GeoJSON properties. */
     val hexColor: String get() = String.format(Locale.US, "#%06X", color and 0xFFFFFF)
@@ -38,5 +40,14 @@ data class WaypointCategoryStyle(
 
         fun defaultFor(category: WaypointCategory): WaypointCategoryStyle =
             defaults().first { it.key == category.key }
+
+        /** A brand new user category with a stable, collision-free key. */
+        fun custom(label: String, color: Int, icon: String): WaypointCategoryStyle =
+            WaypointCategoryStyle(
+                key = "custom-" + java.util.UUID.randomUUID().toString().take(8),
+                label = label.trim().ifBlank { "دستهٔ جدید" },
+                color = color,
+                icon = icon,
+            )
     }
 }

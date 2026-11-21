@@ -11,7 +11,7 @@ import org.junit.Test
 /** Categories are persisted per key, so their keys and colours must stay stable. */
 class WaypointCategoryStyleTest {
 
-    private fun waypoint(category: WaypointCategory) = Waypoint(
+    private fun waypoint(category: String) = Waypoint(
         id = "wp-1",
         name = "نقطه",
         note = "",
@@ -46,13 +46,13 @@ class WaypointCategoryStyleTest {
     @Test
     fun mapMarkersUseTheEditedCategoryColour() {
         val json = OverlayGeoJson.waypoints(
-            listOf(waypoint(WaypointCategory.WATER)),
+            listOf(waypoint(WaypointCategory.WATER.key)),
             selectedId = null,
             categoryColors = mapOf(WaypointCategory.WATER.key to "#123456"),
         )
         assertTrue(json.contains("\"color\":\"#123456\""))
 
-        val fallback = OverlayGeoJson.waypoints(listOf(waypoint(WaypointCategory.WATER)), null)
-        assertTrue(fallback.contains(OverlayGeoJson.colorFor(WaypointCategory.WATER)))
+        val fallback = OverlayGeoJson.waypoints(listOf(waypoint(WaypointCategory.WATER.key)), null)
+        assertTrue(fallback.contains(OverlayGeoJson.colorFor(WaypointCategory.WATER.key)))
     }
 }

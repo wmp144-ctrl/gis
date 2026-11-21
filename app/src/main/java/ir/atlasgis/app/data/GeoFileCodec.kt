@@ -34,7 +34,7 @@ object GeoFileCodec {
                         JSONObject()
                             .put("name", waypoint.name)
                             .put("description", waypoint.note)
-                            .put("category", waypoint.category.key),
+                            .put("category", waypoint.category),
                     )
                     .put(
                         "geometry",
@@ -88,7 +88,7 @@ object GeoFileCodec {
             if (waypoint.note.isNotBlank()) {
                 sb.append("    <desc>").append(escapeXml(waypoint.note)).append("</desc>\n")
             }
-            sb.append("    <type>").append(waypoint.category.key).append("</type>\n")
+            sb.append("    <type>").append(waypoint.category).append("</type>\n")
             sb.append("  </wpt>\n")
         }
         tracks.forEach { track ->
@@ -148,7 +148,7 @@ object GeoFileCodec {
                                 id = newId(),
                                 name = name,
                                 note = note,
-                                category = WaypointCategory.GENERAL,
+                                category = WaypointCategory.GENERAL.key,
                                 lat = lat,
                                 lon = lon,
                                 elevation = if (position.length() > 2) position.optDouble(2) else null,
@@ -253,7 +253,7 @@ object GeoFileCodec {
                         id = newId(),
                         name = data.optString("name").ifBlank { "نقطه GPX" },
                         note = data.optString("desc"),
-                        category = WaypointCategory.fromKey(data.optString("type")),
+                        category = WaypointCategory.fromKey(data.optString("type")).key,
                         lat = lat,
                         lon = lon,
                         elevation = data.optDouble("ele").takeIf { it.isFinite() },
