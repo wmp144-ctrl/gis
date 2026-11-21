@@ -54,6 +54,15 @@ object MapStyleBuilder {
      */
     private const val GLYPHS_URL = "asset://glyphs/{fontstack}/{range}.pbf"
 
+    /**
+     * POI icon atlas, stored as `assets/sprite/atlas.png` + `atlas.json` and loaded
+     * by the style itself. Declaring the sprite is what makes `icon-image` readable
+     * by the symbol engine without any runtime registration: the images are part of
+     * the atlas the moment the style is parsed, so a POI never lays out as text
+     * alone. MapLibre looks for `<url>.png` and `<url>.json`.
+     */
+    const val SPRITE_URL = "asset://sprite/atlas"
+
     private fun emptyCollection(): JSONObject = JSONObject()
         .put("type", "FeatureCollection")
         .put("features", JSONArray())
@@ -63,6 +72,7 @@ object MapStyleBuilder {
         root.put("version", 8)
         root.put("name", "AtlasGIS Offline")
         root.put("glyphs", GLYPHS_URL)
+        root.put("sprite", SPRITE_URL)
 
         val sources = JSONObject()
         val styleLayers = JSONArray()

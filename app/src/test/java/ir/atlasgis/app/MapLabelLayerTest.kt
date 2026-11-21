@@ -4,6 +4,7 @@ import ir.atlasgis.app.data.MapLayer
 import ir.atlasgis.app.data.MapLabelLayers
 import ir.atlasgis.app.data.MapStyleBuilder
 import ir.atlasgis.app.data.PlaceIndexer
+import ir.atlasgis.app.data.PoiClassifier
 import ir.atlasgis.app.data.TileFormat
 import org.json.JSONArray
 import org.json.JSONObject
@@ -159,6 +160,45 @@ class MapLabelLayerTest {
         val images = tags.filter { it.startsWith("atlas-") }.toSet()
         assertTrue(images.contains("atlas-fuel"))
         assertTrue(images.contains("atlas-school"))
+    }
+
+    @Test
+    fun poiIconsShipInTheBundledSprite() {
+        // The sprite is what the renderer reads `icon-image` from; without it a POI
+        // lays out as bare text. Every image the icon expression can ask for has to
+        // be in the atlas, otherwise that POI silently loses its plate.
+        val style = styleFor()
+        assertEquals("asset://sprite/atlas", style.getString("sprite"))
+
+        val assets = listOf("src/main/assets", "app/src/main/assets")
+            .map { File(it) }
+            .first { File(it, "sprite/atlas.json").isFile }
+        val png = File(assets, "sprite/atlas.png")
+        assertTrue("sprite png missing", png.isFile && png.length() > 4096)
+        val atlas = JSONObject(File(assets, "sprite/atlas.json").readText())
+
+        val poi = symbolLayers(style).first { it.optString("source-layer") == "poi" }
+        val layout = poi.getJSONObject("layout")
+        assertTrue("a missing plate must not hide the name", layout.getBoolean("icon-optional"))
+
+        val ids = HashSet<String>()
+        collectImageIds(layout.getJSONArray("icon-image"), ids)
+        assertTrue("expected a broad icon set, found ${ids.size}", ids.size >= 60)
+        ids.forEach { id ->
+            assertTrue("sprite has no $id", atlas.has(id))
+            val entry = atlas.getJSONObject(id)
+            assertTrue("$id has no area", entry.getInt("width") > 0 && entry.getInt("height") > 0)
+        }
+    }
+
+    private fun collectImageIds(node: Any?, out: MutableSet<String>) {
+        if (node !is JSONArray) return
+        for (i in 0 until node.length()) {
+            when (val value = node.opt(i)) {
+                is String -> if (value.startsWith(PoiClassifier.imageId(""))) out.add(value)
+                is JSONArray -> collectImageIds(value, out)
+            }
+        }
     }
 
     @Test

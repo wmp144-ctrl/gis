@@ -3,6 +3,7 @@ package ir.atlasgis.app.ui.map
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PointF
+import android.util.Log
 import ir.atlasgis.app.core.BoundingBox
 import ir.atlasgis.app.core.LatLon
 import ir.atlasgis.app.data.MapStyleBuilder
@@ -32,6 +33,10 @@ data class CameraInfo(
  * re-created while the user pans or records.
  */
 class MapController(@Suppress("unused") private val appContext: Context) {
+
+    private companion object {
+        const val TAG = "MapController"
+    }
 
     private var mapRef: MapLibreMap? = null
 
@@ -108,17 +113,28 @@ class MapController(@Suppress("unused") private val appContext: Context) {
     // ------------------------------------------------------------------ style
 
     /**
-     * Loads the single app style and registers the POI images it references. Images
-     * are added right after the style is parsed and before the first overlay push, so
-     * no symbol layer ever renders with a missing icon.
+     * Loads the single app style. The POI plates ship inside the style's sprite
+     * (`asset://sprite/atlas`), so the symbol engine knows every `icon-image` from
+     * the first layout pass. The bitmaps are additionally attached to the builder,
+     * which MapLibre applies as part of the same style setup; the callback pass only
+     * fills in any name the native atlas is still missing.
      */
     fun loadStyle(styleJson: String, images: Map<String, Bitmap> = emptyMap()) {
         val map = mapRef ?: return
         val builder = Style.Builder().fromJson(styleJson)
+        images.forEach { (name, bitmap) ->
+            runCatching { builder.withImage(name, bitmap) }
+        }
         map.setStyle(builder) { style: Style ->
+            var missing = 0
             images.forEach { (name, bitmap) ->
-                runCatching { style.addImage(name, bitmap) }
+                val present = runCatching { style.getImage(name) != null }.getOrDefault(false)
+                if (!present) {
+                    missing++
+                    runCatching { style.addImage(name, bitmap) }
+                }
             }
+            if (missing > 0) Log.w(TAG, "$missing POI icon images were missing from the style")
             emitCamera(true)
             onStyleReady?.invoke()
         }

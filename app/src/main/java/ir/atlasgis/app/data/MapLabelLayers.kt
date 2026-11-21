@@ -438,10 +438,12 @@ internal object MapLabelLayers {
             "layout",
             JSONObject()
                 .put("icon-image", iconExpression())
-                .put("icon-size", zoomInterpolate(14 to 0.34, 17 to 0.46, 20 to 0.58))
+                .put("icon-size", zoomInterpolate(14 to 0.40, 17 to 0.52, 20 to 0.66))
                 .put("icon-allow-overlap", false)
                 .put("icon-ignore-placement", false)
-                .put("icon-padding", 1)
+                .put("icon-padding", 2)
+                // A plate the atlas cannot resolve must never swallow the name too.
+                .put("icon-optional", true)
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_REGULAR))
                 .put("text-size", zoomInterpolate(14 to 10.0, 17 to 12.0, 20 to 13.0))
@@ -477,7 +479,8 @@ internal object MapLabelLayers {
             "layout",
             JSONObject()
                 .put("icon-image", PoiClassifier.imageId("airport"))
-                .put("icon-size", zoomInterpolate(9 to 0.38, 14 to 0.5))
+                .put("icon-size", zoomInterpolate(9 to 0.44, 14 to 0.58))
+                .put("icon-optional", true)
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_BOLD))
                 .put("text-size", zoomInterpolate(9 to 10.0, 14 to 12.0))
