@@ -81,22 +81,9 @@ internal object VectorStyleHeuristics {
                         dash = listOf(4, 2),
                     ),
                 )
-                Kind.POI -> result.put(
-                    JSONObject()
-                        .put("type", "circle")
-                        .put("source", sourceId)
-                        .put("source-layer", name)
-                        .put("minzoom", 9)
-                        .put(
-                            "paint",
-                            JSONObject()
-                                .put("circle-radius", zoomInterpolate(9 to 1.6, 14 to 3.2, 18 to 4.5))
-                                .put("circle-color", palette.poi)
-                                .put("circle-opacity", (opacity * 0.9f).toDouble())
-                                .put("circle-stroke-width", 1.0)
-                                .put("circle-stroke-color", palette.background),
-                        ),
-                )
+                // Places and POIs are drawn once, as icons with names, by
+                // [MapLabelLayers] below; a second dot layer would only add noise.
+                Kind.POI -> Unit
                 Kind.NONE -> Unit
             }
         }
@@ -113,12 +100,14 @@ internal object VectorStyleHeuristics {
                 )
             }
         }
+        // Street names, settlement names and every POI icon go on top of the geometry.
+        MapLabelLayers.append(result, sourceId, sourceLayers, opacity, palette)
         return result
     }
 
-    private enum class Kind { WATER, WATERWAY, GREEN, BUILDING, ROAD, RAIL, BOUNDARY, POI, NONE }
+    internal enum class Kind { WATER, WATERWAY, GREEN, BUILDING, ROAD, RAIL, BOUNDARY, POI, NONE }
 
-    private fun classify(rawName: String): Kind {
+    internal fun classify(rawName: String): Kind {
         val name = rawName.lowercase()
         return when {
             name.contains("building") -> Kind.BUILDING

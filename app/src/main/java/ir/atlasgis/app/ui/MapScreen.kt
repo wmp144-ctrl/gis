@@ -74,6 +74,10 @@ fun MapScreen(viewModel: MapViewModel) {
     val categoryStyles by viewModel.categoryStyles.collectAsStateWithLifecycle()
     val chromeVisible by viewModel.chromeVisible.collectAsStateWithLifecycle()
     val recordArmed by viewModel.recordArmed.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
+    val searchIndexProgress by viewModel.searchIndexProgress.collectAsStateWithLifecycle()
+    val searchFocus by viewModel.searchFocus.collectAsStateWithLifecycle()
     val cardsScroll = rememberScrollState()
 
     val recordingBadge by remember(viewModel) {
@@ -242,6 +246,22 @@ fun MapScreen(viewModel: MapViewModel) {
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         AnimatedVisibility(
+                            visible = searchFocus != null,
+                            enter = expandVertically(),
+                            exit = shrinkVertically(),
+                        ) {
+                            searchFocus?.let { hit ->
+                                SearchFocusCard(
+                                    hit = hit,
+                                    distanceMeters = gps?.let {
+                                        distanceMeters(LatLon(it.lat, it.lon), hit.position)
+                                    },
+                                    onClose = viewModel::clearSearchFocus,
+                                )
+                            }
+                        }
+
+                        AnimatedVisibility(
                             visible = selectedWaypoint != null,
                             enter = expandVertically(),
                             exit = shrinkVertically(),
@@ -311,6 +331,7 @@ fun MapScreen(viewModel: MapViewModel) {
                     MapBottomBar(
                         layerSummary = activeLayerName,
                         layerCount = layers.size,
+                        onSearch = viewModel::openSearch,
                         onLayers = { viewModel.openSheet(Sheet.LAYERS) },
                         onSettings = { viewModel.openSheet(Sheet.SETTINGS) },
                     )
@@ -439,6 +460,16 @@ fun MapScreen(viewModel: MapViewModel) {
                 exporter.launch(safeFileName(track.name, if (gpx) "gpx" else "geojson"))
             },
             onImport = { geoPicker.launch(arrayOf("*/*")) },
+        )
+
+        Sheet.SEARCH -> SearchSheet(
+            query = searchQuery,
+            hits = searchHits,
+            indexProgress = searchIndexProgress,
+            gps = gps,
+            onQueryChange = viewModel::setSearchQuery,
+            onSelect = viewModel::selectSearchHit,
+            onDismiss = viewModel::closeSearch,
         )
 
         Sheet.SETTINGS -> SettingsSheet(

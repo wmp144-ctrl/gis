@@ -81,6 +81,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
             """.trimIndent(),
         )
         db.execSQL("CREATE INDEX idx_tracks_started ON tracks(started_at DESC)")
+        createPlacesTable(db)
         db.execSQL(
             """
             CREATE TABLE waypoint_categories (
@@ -120,6 +121,40 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
                 "ALTER TABLE waypoint_categories ADD COLUMN visible INTEGER NOT NULL DEFAULT 1",
             )
         }
+        if (oldVersion < 6) {
+            createPlacesTable(db)
+        }
+    }
+
+    /** Searchable place index for vector archives; see [PlaceIndexer]. */
+    private fun createPlacesTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS map_places (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                layer_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                name_norm TEXT NOT NULL,
+                klass TEXT NOT NULL DEFAULT '',
+                layer_name TEXT NOT NULL DEFAULT '',
+                lat REAL NOT NULL,
+                lon REAL NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_places_norm ON map_places(name_norm)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_places_layer ON map_places(layer_id)")
+        // Marker so an archive with no naming features is not re-indexed on every
+        // search: an empty result is a valid, complete result.
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS map_place_index (
+                layer_id TEXT PRIMARY KEY NOT NULL,
+                built_at INTEGER NOT NULL,
+                place_count INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
     }
 
     /** Missing rows only: an upgraded database keeps the user's own colours/icons. */
@@ -230,9 +265,108 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
     fun deleteLayer(id: String): MapLayer? {
         val layer = synchronized(writeLock) { layerById(id) }
         synchronized(writeLock) {
-            writableDatabase.delete("map_layers", "id = ?", arrayOf(id))
+            val db = writableDatabase
+            db.beginTransaction()
+            try {
+                db.delete("map_places", "layer_id = ?", arrayOf(id))
+                db.delete("map_place_index", "layer_id = ?", arrayOf(id))
+                db.delete("map_layers", "id = ?", arrayOf(id))
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
         }
         return layer
+    }
+
+    // ------------------------------------------------------------ place index
+
+    fun isPlacesIndexed(layerId: String): Boolean = synchronized(writeLock) {
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM map_place_index WHERE layer_id = ? LIMIT 1",
+            arrayOf(layerId),
+        ).use { it.moveToFirst() }
+    }
+
+    fun markPlacesIndexed(layerId: String, placeCount: Int) = synchronized(writeLock) {
+        val values = ContentValues().apply {
+            put("layer_id", layerId)
+            put("built_at", System.currentTimeMillis())
+            put("place_count", placeCount)
+        }
+        writableDatabase.insertWithOnConflict(
+            "map_place_index", null, values, SQLiteDatabase.CONFLICT_REPLACE,
+        )
+        Unit
+    }
+
+    fun deletePlacesForLayer(layerId: String) = synchronized(writeLock) {
+        writableDatabase.delete("map_places", "layer_id = ?", arrayOf(layerId))
+        Unit
+    }
+
+    /** Inserts one batch inside its own transaction; returns how many rows were written. */
+    fun insertPlaces(layerId: String, rows: List<MapPlace>): Int {
+        if (rows.isEmpty()) return 0
+        return synchronized(writeLock) {
+            val db = writableDatabase
+            db.beginTransaction()
+            try {
+                val statement = db.compileStatement(
+                    "INSERT INTO map_places(layer_id, name, name_norm, klass, layer_name, lat, lon) " +
+                        "VALUES(?, ?, ?, ?, ?, ?, ?)",
+                )
+                rows.forEach { row ->
+                    statement.clearBindings()
+                    statement.bindString(1, layerId)
+                    statement.bindString(2, row.name)
+                    statement.bindString(3, PlaceIndexer.normalize(row.name))
+                    statement.bindString(4, row.klass)
+                    statement.bindString(5, row.layerName)
+                    statement.bindDouble(6, row.lat)
+                    statement.bindDouble(7, row.lon)
+                    statement.executeInsert()
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            rows.size
+        }
+    }
+
+    /** Prefix matches first, then the shortest names: what a search field expects. */
+    fun searchPlaces(query: String, limit: Int = 40): List<MapPlace> = synchronized(writeLock) {
+        val needle = PlaceIndexer.normalize(query)
+        if (needle.length < 2) return emptyList()
+        val result = ArrayList<MapPlace>(limit)
+        readableDatabase.rawQuery(
+            "SELECT name, klass, layer_name, lat, lon, layer_id FROM map_places " +
+                "WHERE name_norm LIKE ? " +
+                "ORDER BY CASE WHEN name_norm LIKE ? THEN 0 ELSE 1 END, length(name_norm), name " +
+                "LIMIT ?",
+            arrayOf("%$needle%", "$needle%", limit.toString()),
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result.add(
+                    MapPlace(
+                        name = cursor.getString(0),
+                        klass = cursor.getString(1),
+                        layerName = cursor.getString(2),
+                        lat = cursor.getDouble(3),
+                        lon = cursor.getDouble(4),
+                        layerId = cursor.getString(5),
+                    ),
+                )
+            }
+        }
+        result
+    }
+
+    fun placeCount(): Long = synchronized(writeLock) {
+        readableDatabase.rawQuery("SELECT count(*) FROM map_places", null).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+        }
     }
 
     private fun layerById(id: String): MapLayer? =
@@ -436,7 +570,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
 
     companion object {
         private const val NAME = "atlasgis.db"
-        private const val VERSION = 5
+        private const val VERSION = 6
 
         fun newId(): String = UUID.randomUUID().toString()
 

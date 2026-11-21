@@ -113,6 +113,16 @@ object OverlayGeoJson {
         return """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[${fix.lon},${fix.lat}]}}]}"""
     }
 
+    /** Single highlighted point: the place picked from map search. */
+    fun searchFocus(point: LatLon?): String {
+        if (point == null) return empty()
+        val sb = StringBuilder(160)
+        sb.append("""{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[""")
+        appendCoordinate(sb, point.lon, point.lat)
+        sb.append("]}}]}")
+        return sb.toString()
+    }
+
     /** Approximate accuracy circle as a geodesic polygon (48 vertices). */
     fun accuracyRing(fix: GpsFix?): String {
         if (fix == null || fix.accuracyMeters <= 0f) return empty()

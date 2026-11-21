@@ -31,6 +31,18 @@ data class MapLayer(
     val hasCustomStyle: Boolean get() = stylePath != null
 }
 
+/** One searchable place read from a vector map archive. */
+data class MapPlace(
+    val name: String,
+    val klass: String,
+    val layerName: String,
+    val lat: Double,
+    val lon: Double,
+    val layerId: String,
+) {
+    val position: LatLon get() = LatLon(lat, lon)
+}
+
 enum class WaypointCategory(val key: String) {
     GENERAL("general"),
     WATER("water"),

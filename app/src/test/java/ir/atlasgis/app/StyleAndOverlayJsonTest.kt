@@ -140,8 +140,11 @@ class StyleAndOverlayJsonTest {
             }
             val filter = layer.optJSONArray("filter")
             if (filter != null) {
-                assertEquals("==", filter.getString(0))
-                assertTrue(filter.get(1) is JSONArray)
+                assertTrue("filter must be a non-empty expression", filter.length() >= 2)
+                assertTrue(
+                    "unknown filter operator ${filter.getString(0)}",
+                    filter.getString(0) in setOf("==", "!=", "all", "any", "none", "in", "has", "!"),
+                )
             }
         }
         assertTrue(checkedInterpolation)

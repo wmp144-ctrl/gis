@@ -16,6 +16,7 @@ object MapStyleBuilder {
     const val SRC_ACTIVE_TRACK = "atlas-active-track"
     const val SRC_GPS = "atlas-gps"
     const val SRC_GPS_ACCURACY = "atlas-gps-accuracy"
+    const val SRC_SEARCH = "atlas-search"
 
     const val LAYER_MEASURE_FILL = "atlas-measure-fill"
     const val LAYER_MEASURE_LINE = "atlas-measure-line"
@@ -30,10 +31,57 @@ object MapStyleBuilder {
     const val LAYER_GPS_RING = "atlas-gps-ring"
     const val LAYER_GPS_DOT = "atlas-gps-dot"
     const val LAYER_GPS_CORE = "atlas-gps-core"
+    const val LAYER_SEARCH_HALO = "atlas-search-halo"
+    const val LAYER_SEARCH_RING = "atlas-search-ring"
+    const val LAYER_SEARCH_DOT = "atlas-search-dot"
     const val LAYER_BACKGROUND = "atlas-background"
 
     private const val ACCENT = "#3ED598"
     private const val MEASURE_COLOR = "#7C8CFF"
+    private const val SEARCH_ACCENT = "#FFC15E"
+
+    /**
+     * Offline text: no glyph server, no network. MapLibre Native rasterises the
+     * bundled TrueType faces with FreeType and shapes them with HarfBuzz, which is
+     * what makes Persian street names join correctly. Latin and Arabic faces are
+     * split by Unicode range so the same `text-font` name works for both scripts.
+     */
+    private fun fontFaces(): JSONObject {
+        val latinRanges = JSONArray()
+            .put("U+0000-024F")
+            .put("U+1E00-1EFF")
+            .put("U+2000-206F")
+            .put("U+20A0-20CF")
+            .put("U+2100-214F")
+            .put("U+2C60-2C7F")
+            .put("U+A720-A7FF")
+        val arabicRanges = JSONArray()
+            .put("U+0600-06FF")
+            .put("U+0750-077F")
+            .put("U+08A0-08FF")
+            .put("U+FB50-FDFF")
+            .put("U+FE70-FEFF")
+
+        fun face(regular: String, bold: String): JSONArray = JSONArray()
+            .put(JSONObject().put("url", regular).put("unicode-range", latinRanges))
+            .put(JSONObject().put("url", bold).put("unicode-range", arabicRanges))
+
+        return JSONObject()
+            .put(
+                MapLabelLayers.FONT_REGULAR,
+                face(
+                    "asset://fonts/NotoSans-Regular.ttf",
+                    "asset://fonts/NotoSansArabic-Regular.ttf",
+                ),
+            )
+            .put(
+                MapLabelLayers.FONT_BOLD,
+                face(
+                    "asset://fonts/NotoSans-Bold.ttf",
+                    "asset://fonts/NotoSansArabic-Bold.ttf",
+                ),
+            )
+    }
 
     private fun emptyCollection(): JSONObject = JSONObject()
         .put("type", "FeatureCollection")
@@ -43,6 +91,7 @@ object MapStyleBuilder {
         val root = JSONObject()
         root.put("version", 8)
         root.put("name", "AtlasGIS Offline")
+        root.put("font-faces", fontFaces())
 
         val sources = JSONObject()
         val styleLayers = JSONArray()
@@ -71,6 +120,7 @@ object MapStyleBuilder {
         sources.put(SRC_TRACKS, geojsonSource())
         sources.put(SRC_ACTIVE_TRACK, geojsonSource())
         sources.put(SRC_WAYPOINTS, geojsonSource())
+        sources.put(SRC_SEARCH, geojsonSource())
         sources.put(SRC_GPS_ACCURACY, geojsonSource())
         sources.put(SRC_GPS, geojsonSource())
 
@@ -197,14 +247,55 @@ object MapStyleBuilder {
                     "filter",
                     JSONArray().put("==").put(JSONArray().put("get").put("selected")).put(true),
                 )
+                            .put(
+                "paint",
+                JSONObject()
+                    .put("circle-radius", 17)
+                    .put("circle-color", "#000000")
+                    .put("circle-opacity", 0)
+                    .put("circle-stroke-width", 2)
+                    .put("circle-stroke-color", ACCENT),
+            ),
+        )
+        // Search focus: a warm pin that reads on every preset.
+        styleLayers.put(
+            JSONObject()
+                .put("id", LAYER_SEARCH_HALO)
+                .put("type", "circle")
+                .put("source", SRC_SEARCH)
                 .put(
                     "paint",
                     JSONObject()
-                        .put("circle-radius", 17)
-                        .put("circle-color", "#000000")
-                        .put("circle-opacity", 0)
-                        .put("circle-stroke-width", 2)
-                        .put("circle-stroke-color", ACCENT),
+                        .put("circle-radius", 26)
+                        .put("circle-color", SEARCH_ACCENT)
+                        .put("circle-opacity", 0.18)
+                        .put("circle-blur", 0.8),
+                ),
+        )
+        styleLayers.put(
+            JSONObject()
+                .put("id", LAYER_SEARCH_RING)
+                .put("type", "circle")
+                .put("source", SRC_SEARCH)
+                .put(
+                    "paint",
+                    JSONObject()
+                        .put("circle-radius", 11)
+                        .put("circle-color", SEARCH_ACCENT)
+                        .put("circle-stroke-width", 2.4)
+                        .put("circle-stroke-color", "#0B1220"),
+                ),
+        )
+        styleLayers.put(
+            JSONObject()
+                .put("id", LAYER_SEARCH_DOT)
+                .put("type", "circle")
+                .put("source", SRC_SEARCH)
+                .put(
+                    "paint",
+                    JSONObject()
+                        .put("circle-radius", 4.2)
+                        .put("circle-color", "#FFFFFF"),
                 ),
         )
         styleLayers.put(

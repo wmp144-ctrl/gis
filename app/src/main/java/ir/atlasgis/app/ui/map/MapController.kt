@@ -1,6 +1,7 @@
 package ir.atlasgis.app.ui.map
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.PointF
 import ir.atlasgis.app.core.BoundingBox
 import ir.atlasgis.app.core.LatLon
@@ -106,10 +107,18 @@ class MapController(@Suppress("unused") private val appContext: Context) {
 
     // ------------------------------------------------------------------ style
 
-    fun loadStyle(styleJson: String) {
+    /**
+     * Loads the single app style and registers the POI images it references. Images
+     * are added right after the style is parsed and before the first overlay push, so
+     * no symbol layer ever renders with a missing icon.
+     */
+    fun loadStyle(styleJson: String, images: Map<String, Bitmap> = emptyMap()) {
         val map = mapRef ?: return
         val builder = Style.Builder().fromJson(styleJson)
-        map.setStyle(builder) { _: Style ->
+        map.setStyle(builder) { style: Style ->
+            images.forEach { (name, bitmap) ->
+                runCatching { style.addImage(name, bitmap) }
+            }
             emitCamera(true)
             onStyleReady?.invoke()
         }
@@ -128,6 +137,7 @@ class MapController(@Suppress("unused") private val appContext: Context) {
         activeTrackJson: String,
         gpsJson: String,
         accuracyJson: String,
+        searchJson: String,
     ) {
         updateSource(MapStyleBuilder.SRC_WAYPOINTS, waypointsJson)
         updateSource(MapStyleBuilder.SRC_MEASURE, measureJson)
@@ -135,6 +145,7 @@ class MapController(@Suppress("unused") private val appContext: Context) {
         updateSource(MapStyleBuilder.SRC_ACTIVE_TRACK, activeTrackJson)
         updateSource(MapStyleBuilder.SRC_GPS, gpsJson)
         updateSource(MapStyleBuilder.SRC_GPS_ACCURACY, accuracyJson)
+        updateSource(MapStyleBuilder.SRC_SEARCH, searchJson)
     }
 
     // ----------------------------------------------------------------- camera

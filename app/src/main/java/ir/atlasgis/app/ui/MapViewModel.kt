@@ -1,6 +1,7 @@
 package ir.atlasgis.app.ui
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,10 +16,15 @@ import ir.atlasgis.app.data.GeoFileCodec
 import ir.atlasgis.app.data.GpsFix
 import ir.atlasgis.app.data.MapLayer
 import ir.atlasgis.app.data.MapLibrary
+import ir.atlasgis.app.data.MapPlace
 import ir.atlasgis.app.data.MapStyleBuilder
 import ir.atlasgis.app.data.MapStylePreset
+import ir.atlasgis.app.data.MapSymbolIcons
 import ir.atlasgis.app.data.MeasureMode
 import ir.atlasgis.app.data.OverlayGeoJson
+import ir.atlasgis.app.data.PlaceIndexer
+import ir.atlasgis.app.data.PoiClassifier
+import ir.atlasgis.app.data.TileFormat
 import ir.atlasgis.app.data.RecordingState
 import ir.atlasgis.app.data.SettingsStore
 import ir.atlasgis.app.data.Track
@@ -41,7 +47,18 @@ import kotlin.math.max
 
 enum class Tool { BROWSE, MEASURE }
 
-enum class Sheet { NONE, TOOLS, LAYERS, WAYPOINTS, TRACKS, SETTINGS }
+enum class Sheet { NONE, TOOLS, LAYERS, WAYPOINTS, TRACKS, SETTINGS, SEARCH }
+
+/** One row in the map search sheet: a saved waypoint or a place from the map file. */
+data class SearchHit(
+    val name: String,
+    val kind: String,
+    val label: String,
+    val position: LatLon,
+    val waypointId: String? = null,
+) {
+    val fromWaypoint: Boolean get() = waypointId != null
+}
 
 data class MeasureUiState(
     val active: Boolean = false,
@@ -121,6 +138,29 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _gps = MutableStateFlow<GpsFix?>(null)
     val gps: StateFlow<GpsFix?> = _gps.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _searchHits = MutableStateFlow<List<SearchHit>>(emptyList())
+    val searchHits: StateFlow<List<SearchHit>> = _searchHits.asStateFlow()
+
+    /** 0..1 while the place index is being built for the first time, null otherwise. */
+    private val _searchIndexProgress = MutableStateFlow<Float?>(null)
+    val searchIndexProgress: StateFlow<Float?> = _searchIndexProgress.asStateFlow()
+
+    /** The place the user picked from search; drawn as a highlighted pin. */
+    private val _searchFocus = MutableStateFlow<SearchHit?>(null)
+    val searchFocus: StateFlow<SearchHit?> = _searchFocus.asStateFlow()
+
+    private val placeIndexer = PlaceIndexer(db)
+    private var searchJob: Job? = null
+    private var indexJob: Job? = null
+
+    /** Material icon plates for POIs, rendered once and handed to every style load. */
+    private val symbolImages: Map<String, Bitmap> by lazy {
+        runCatching { MapSymbolIcons.bitmaps(getApplication()) }.getOrDefault(emptyMap())
+    }
+
     val settings: StateFlow<AppSettings> = settingsStore.settings
 
     private var activeSession: TrackSession? = null
@@ -191,7 +231,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (!force && key == lastStyleKey) return
         lastStyleKey = key
-        controller.loadStyle(MapStyleBuilder.build(current))
+        controller.loadStyle(MapStyleBuilder.build(current), symbolImages)
     }
 
     private fun pushOverlays() {
@@ -217,8 +257,94 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             activeTrackJson = OverlayGeoJson.line(_liveTrackPoints.value),
             gpsJson = OverlayGeoJson.gpsPoint(_gps.value),
             accuracyJson = OverlayGeoJson.accuracyRing(_gps.value),
+            searchJson = OverlayGeoJson.searchFocus(_searchFocus.value?.position),
         )
     }
+
+    // -------------------------------------------------------------------- search
+
+    fun openSearch() {
+        _sheet.value = Sheet.SEARCH
+        ensureSearchIndex()
+    }
+
+    fun closeSearch() {
+        _searchQuery.value = ""
+        _searchHits.value = emptyList()
+        _sheet.value = Sheet.NONE
+    }
+
+    fun setSearchQuery(text: String) {
+        _searchQuery.value = text
+        searchJob?.cancel()
+        val needle = text.trim()
+        if (needle.length < 2) {
+            _searchHits.value = emptyList()
+            return
+        }
+        searchJob = viewModelScope.launch {
+            delay(140)
+            val waypointHits = _waypoints.value
+                .filter { it.name.contains(needle, ignoreCase = true) || it.note.contains(needle, ignoreCase = true) }
+                .take(12)
+                .map { waypoint ->
+                    SearchHit(
+                        name = waypoint.name,
+                        kind = waypoint.category,
+                        label = PoiClassifier.labelFor(waypoint.category),
+                        position = waypoint.position,
+                        waypointId = waypoint.id,
+                    )
+                }
+            val placeHits = withContext(Dispatchers.IO) { db.searchPlaces(needle, 40) }
+                .map { place -> place.toHit() }
+            _searchHits.value = waypointHits + placeHits
+        }
+    }
+
+    /** Builds the place index once per vector archive, in the background. */
+    private fun ensureSearchIndex() {
+        if (indexJob?.isActive == true) return
+        val candidates = _layers.value.filter { it.visible && it.format == TileFormat.VECTOR }
+        if (candidates.isEmpty()) return
+        indexJob = viewModelScope.launch {
+            val pending = withContext(Dispatchers.IO) {
+                candidates.filter { !db.isPlacesIndexed(it.id) }
+            }
+            if (pending.isEmpty()) return@launch
+            _searchIndexProgress.value = 0f
+            pending.forEach { layer ->
+                runCatching {
+                    placeIndexer.build(layer) { progress -> _searchIndexProgress.value = progress }
+                }
+            }
+            _searchIndexProgress.value = null
+            // Results typed while indexing finished are refreshed now.
+            if (_searchQuery.value.trim().length >= 2) setSearchQuery(_searchQuery.value)
+        }
+    }
+
+    fun selectSearchHit(hit: SearchHit) {
+        _sheet.value = Sheet.NONE
+        _searchFocus.value = hit
+        _selectedWaypointId.value = hit.waypointId
+        _chromeVisible.value = true
+        controller.flyTo(hit.position, max(controller.zoom(), 16.0))
+        pushOverlays()
+    }
+
+    fun clearSearchFocus() {
+        if (_searchFocus.value == null) return
+        _searchFocus.value = null
+        pushOverlays()
+    }
+
+    private fun MapPlace.toHit(): SearchHit = SearchHit(
+        name = name,
+        kind = klass,
+        label = PoiClassifier.labelFor(klass),
+        position = position,
+    )
 
     // -------------------------------------------------------------------- layers
 
@@ -336,6 +462,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             addMeasurePoint(point)
             return
         }
+        // Exploring the map dismisses the last search result pin.
+        if (_searchFocus.value != null) clearSearchFocus()
         if (!_chromeVisible.value) {
             // The first tap only brings the chrome back, as requested.
             _chromeVisible.value = true

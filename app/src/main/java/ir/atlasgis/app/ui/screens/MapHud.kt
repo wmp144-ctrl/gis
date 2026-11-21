@@ -45,6 +45,7 @@ import ir.atlasgis.app.data.MeasureMode
 import ir.atlasgis.app.data.RecordingState
 import ir.atlasgis.app.data.Waypoint
 import ir.atlasgis.app.ui.MeasureUiState
+import ir.atlasgis.app.ui.SearchHit
 import ir.atlasgis.app.ui.components.GlassPanel
 import ir.atlasgis.app.ui.components.GradientBadge
 import ir.atlasgis.app.ui.components.RoundIconButton
@@ -61,6 +62,7 @@ import kotlin.math.roundToInt
 fun MapBottomBar(
     layerSummary: String,
     layerCount: Int,
+    onSearch: () -> Unit,
     onLayers: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -90,6 +92,7 @@ fun MapBottomBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            RoundIconButton(Icons.Rounded.Search, "جست‌وجوی مکان", onSearch)
             RoundIconButton(Icons.Rounded.Layers, "لایه‌ها", onLayers)
             RoundIconButton(Icons.Rounded.Settings, "تنظیمات", onSettings)
         }
@@ -436,6 +439,59 @@ fun WaypointCard(
                 HudActionButton("ویرایش", Icons.Rounded.Edit, onEdit)
                 HudActionButton("حذف", Icons.Rounded.Delete, onDelete, accent = AtlasColors.Danger)
             }
+        }
+    }
+}
+
+/** The place picked from map search, pinned above the bottom bar. */
+@Composable
+fun SearchFocusCard(
+    hit: SearchHit,
+    distanceMeters: Double?,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = if (hit.fromWaypoint) AtlasColors.Accent else poiColorFor(hit.kind)
+    GlassPanel(modifier = modifier.fillMaxWidth(), borderColor = accent.copy(alpha = 0.5f)) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(accent.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (hit.fromWaypoint) categoryIcon(hit.kind) else poiIconFor(hit.kind),
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = hit.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = AtlasColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = buildString {
+                        append(hit.label.ifBlank { "مکان" })
+                        if (distanceMeters != null) append(" · ${formatDistance(distanceMeters)}")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AtlasColors.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            RoundIconButton(Icons.Rounded.Close, "بستن نتیجهٔ جست‌وجو", onClose)
         }
     }
 }
