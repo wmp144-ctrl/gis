@@ -19,3 +19,6 @@ key.properties
 *.jks
 *.keystore
 keystore/
+
+# Built APKs (rebuild with: ./gradlew :app:assembleRelease)
+dist/
