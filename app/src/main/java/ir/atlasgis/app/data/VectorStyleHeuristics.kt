@@ -31,7 +31,7 @@ internal object VectorStyleHeuristics {
                 Kind.WATERWAY -> result.put(
                     line(
                         sourceId, name, palette.waterway, opacity,
-                        width = zoomInterpolate(6 to 0.4, 12 to 1.6, 16 to 3.2, 20 to 7.0),
+                        width = zoomInterpolate(6 to 0.5, 12 to 2.0, 16 to 3.6, 20 to 7.5),
                     ),
                 )
                 Kind.GREEN -> result.put(
@@ -61,7 +61,7 @@ internal object VectorStyleHeuristics {
                                     .put("line-opacity", (opacity * 0.9f).toDouble())
                                     .put(
                                         "line-width",
-                                        zoomInterpolate(8 to 2.0, 12 to 4.2, 15 to 10.5, 18 to 23.0),
+                                        zoomInterpolate(8 to 2.2, 12 to 5.0, 15 to 12.0, 18 to 26.0),
                                     ),
                             ),
                     )
@@ -232,7 +232,7 @@ internal object VectorStyleHeuristics {
                 JSONObject()
                     .put("line-color", classColor)
                     .put("line-opacity", (opacity * 0.98f).toDouble())
-                    .put("line-width", zoomInterpolate(8 to 0.7, 12 to 2.0, 15 to 6.0, 18 to 15.0)),
+                    .put("line-width", zoomInterpolate(8 to 0.8, 12 to 2.4, 15 to 7.0, 18 to 17.0)),
             )
     }
 }

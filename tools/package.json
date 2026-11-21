@@ -1,0 +1,11 @@
+{
+  "name": "atlasgis-tools",
+  "private": true,
+  "description": "Build-time generators for the AtlasGIS offline style assets.",
+  "scripts": {
+    "glyphs": "node generate_glyphs.js"
+  },
+  "dependencies": {
+    "fontnik": "0.7.7"
+  }
+}

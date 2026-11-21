@@ -255,12 +255,12 @@ internal object MapLabelLayers {
                     .put(
                         "text-size",
                         zoomInterpolate(
-                            10 to (if (major) 10.0 else 9.0),
-                            14 to (if (major) 11.5 else 10.0),
-                            18 to (if (major) 13.5 else 11.5),
+                            10 to (if (major) 10.5 else 9.5),
+                            14 to (if (major) 12.0 else 10.5),
+                            18 to (if (major) 14.0 else 12.0),
                         ),
                     )
-                    .put("text-letter-spacing", 0.02)
+                    .put("text-letter-spacing", 0.03)
                     .put("text-padding", 2)
                     .put("text-max-angle", 32)
                     .put("text-rotation-alignment", "map")
@@ -274,7 +274,7 @@ internal object MapLabelLayers {
                     .put("text-color", palette.roadLabel)
                     .put("text-opacity", opacity.coerceIn(0.4f, 1f).toDouble())
                     .put("text-halo-color", palette.labelHalo)
-                    .put("text-halo-width", 1.5)
+                    .put("text-halo-width", 1.7)
                     .put("text-halo-blur", 0.3),
             )
     }
@@ -333,7 +333,7 @@ internal object MapLabelLayers {
                 JSONObject()
                     .put("text-color", palette.placeText)
                     .put("text-halo-color", palette.labelHalo)
-                    .put("text-halo-width", if (bold) 1.8 else 1.5)
+                    .put("text-halo-width", if (bold) 2.0 else 1.7)
                     .put("text-halo-blur", 0.3),
             )
     }
@@ -361,7 +361,7 @@ internal object MapLabelLayers {
                 .put("symbol-spacing", 420)
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_REGULAR))
-                .put("text-size", zoomInterpolate(12 to 10.0, 16 to 12.0, 19 to 13.0))
+                .put("text-size", zoomInterpolate(12 to 10.5, 16 to 12.5, 19 to 14.0))
                 .put("text-letter-spacing", 0.04)
                 .put("text-max-angle", 30)
                 .put("text-rotation-alignment", "map")
@@ -402,7 +402,7 @@ internal object MapLabelLayers {
             JSONObject()
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_REGULAR))
-                .put("text-size", zoomInterpolate(6 to 11.0, 12 to 13.0, 16 to 14.5))
+                .put("text-size", zoomInterpolate(6 to 11.5, 12 to 13.5, 16 to 15.0))
                 .put("text-letter-spacing", 0.06)
                 .put("text-max-width", 7)
                 .put("symbol-sort-key", rankExpression()),
@@ -438,17 +438,19 @@ internal object MapLabelLayers {
             "layout",
             JSONObject()
                 .put("icon-image", iconExpression())
-                .put("icon-size", zoomInterpolate(14 to 0.40, 17 to 0.52, 20 to 0.66))
+                // Plates are 64 px in the atlas; these sizes put a POI at roughly
+                // 32-52 px on screen, the size range a modern day map uses.
+                .put("icon-size", zoomInterpolate(14 to 0.50, 17 to 0.66, 20 to 0.82))
                 .put("icon-allow-overlap", false)
                 .put("icon-ignore-placement", false)
-                .put("icon-padding", 2)
+                .put("icon-padding", 3)
                 // A plate the atlas cannot resolve must never swallow the name too.
                 .put("icon-optional", true)
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_REGULAR))
-                .put("text-size", zoomInterpolate(14 to 10.0, 17 to 12.0, 20 to 13.0))
+                .put("text-size", zoomInterpolate(14 to 10.5, 17 to 12.5, 20 to 14.0))
                 .put("text-anchor", "top")
-                .put("text-offset", JSONArray().put(0).put(1.0))
+                .put("text-offset", JSONArray().put(0).put(1.05))
                 .put("text-max-width", 6.5)
                 .put("text-padding", 1)
                 .put("text-optional", true)
@@ -460,7 +462,7 @@ internal object MapLabelLayers {
                 .put("icon-opacity", opacity.coerceIn(0.4f, 1f).toDouble())
                 .put("text-color", palette.poiText)
                 .put("text-halo-color", palette.labelHalo)
-                .put("text-halo-width", 1.4)
+                .put("text-halo-width", 1.6)
                 .put("text-halo-blur", 0.3),
         )
 
@@ -479,11 +481,11 @@ internal object MapLabelLayers {
             "layout",
             JSONObject()
                 .put("icon-image", PoiClassifier.imageId("airport"))
-                .put("icon-size", zoomInterpolate(9 to 0.44, 14 to 0.58))
+                .put("icon-size", zoomInterpolate(9 to 0.56, 14 to 0.72))
                 .put("icon-optional", true)
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_BOLD))
-                .put("text-size", zoomInterpolate(9 to 10.0, 14 to 12.0))
+                .put("text-size", zoomInterpolate(9 to 11.0, 14 to 13.0))
                 .put("text-anchor", "top")
                 .put("text-offset", JSONArray().put(0).put(1.1))
                 .put("text-max-width", 8)

@@ -49,8 +49,9 @@ object MapStyleBuilder {
      * shaped with a left-to-right direction and laid out reversed, which shows a
      * street name as isolated, backwards words. The legacy glyph path applies the
      * standard BiDi reordering and Arabic presentation forms, so names read joined
-     * and in the right order. Each range is a merged set of Noto Sans and Noto Sans
-     * Arabic glyphs for the [MapLabelLayers] font stacks.
+     * and in the right order. Each range is built by `tools/generate_glyphs.js` from
+     * Noto Sans (Latin) plus Vazirmatn (Persian), the faces behind the
+     * [MapLabelLayers] font stacks.
      */
     private const val GLYPHS_URL = "asset://glyphs/{fontstack}/{range}.pbf"
 
