@@ -191,6 +191,32 @@ class MapLabelLayerTest {
         }
     }
 
+    @Test
+    fun iconTableAndSpriteStayInSync() {
+        // One JSON table feeds the runtime plates and the sprite; a category edited
+        // without rerunning tools/generate_poi_sprite.py must fail here, not ship as
+        // a place whose name has no icon.
+        val assets = listOf("src/main/assets", "app/src/main/assets")
+            .map { File(it) }
+            .first { File(it, "poi-icons.json").isFile }
+        val table = JSONArray(File(assets, "poi-icons.json").readText())
+        val atlas = JSONObject(File(assets, "sprite/atlas.json").readText())
+
+        val entries = (0 until table.length()).map { table.getJSONObject(it) }
+        assertTrue("icon table too small: ${entries.size}", entries.size >= 60)
+        assertEquals(
+            "regenerate the sprite after editing poi-icons.json",
+            entries.map { PoiClassifier.imageId(it.getString("key")) }.toSet(),
+            atlas.keys().asSequence().toSet(),
+        )
+        entries.forEach { entry ->
+            val key = entry.getString("key")
+            val codepoint = entry.getInt("codepoint")
+            assertTrue("$key is not a Material Icons glyph", codepoint in 0xE000..0xF8FF)
+            assertTrue("$key needs a #RRGGBB tint", entry.getString("tint").matches(Regex("^#[0-9A-Fa-f]{6}$")))
+        }
+    }
+
     private fun collectImageIds(node: Any?, out: MutableSet<String>) {
         if (node !is JSONArray) return
         for (i in 0 until node.length()) {
