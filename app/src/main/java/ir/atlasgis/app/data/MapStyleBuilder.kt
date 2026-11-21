@@ -41,47 +41,18 @@ object MapStyleBuilder {
     private const val SEARCH_ACCENT = "#FFC15E"
 
     /**
-     * Offline text: no glyph server, no network. MapLibre Native rasterises the
-     * bundled TrueType faces with FreeType and shapes them with HarfBuzz, which is
-     * what makes Persian street names join correctly. Latin and Arabic faces are
-     * split by Unicode range so the same `text-font` name works for both scripts.
+     * Offline text: the signed-distance glyph sets are bundled in the APK and read
+     * through the `asset://` scheme, so no glyph server and no network are needed.
+     *
+     * Glyph PBFs (rather than the `font-faces` TTF path) are what keeps Persian
+     * correct on MapLibre Native: with font-faces every Arabic-script label is
+     * shaped with a left-to-right direction and laid out reversed, which shows a
+     * street name as isolated, backwards words. The legacy glyph path applies the
+     * standard BiDi reordering and Arabic presentation forms, so names read joined
+     * and in the right order. Each range is a merged set of Noto Sans and Noto Sans
+     * Arabic glyphs for the [MapLabelLayers] font stacks.
      */
-    private fun fontFaces(): JSONObject {
-        val latinRanges = JSONArray()
-            .put("U+0000-024F")
-            .put("U+1E00-1EFF")
-            .put("U+2000-206F")
-            .put("U+20A0-20CF")
-            .put("U+2100-214F")
-            .put("U+2C60-2C7F")
-            .put("U+A720-A7FF")
-        val arabicRanges = JSONArray()
-            .put("U+0600-06FF")
-            .put("U+0750-077F")
-            .put("U+08A0-08FF")
-            .put("U+FB50-FDFF")
-            .put("U+FE70-FEFF")
-
-        fun face(regular: String, bold: String): JSONArray = JSONArray()
-            .put(JSONObject().put("url", regular).put("unicode-range", latinRanges))
-            .put(JSONObject().put("url", bold).put("unicode-range", arabicRanges))
-
-        return JSONObject()
-            .put(
-                MapLabelLayers.FONT_REGULAR,
-                face(
-                    "asset://fonts/NotoSans-Regular.ttf",
-                    "asset://fonts/NotoSansArabic-Regular.ttf",
-                ),
-            )
-            .put(
-                MapLabelLayers.FONT_BOLD,
-                face(
-                    "asset://fonts/NotoSans-Bold.ttf",
-                    "asset://fonts/NotoSansArabic-Bold.ttf",
-                ),
-            )
-    }
+    private const val GLYPHS_URL = "asset://glyphs/{fontstack}/{range}.pbf"
 
     private fun emptyCollection(): JSONObject = JSONObject()
         .put("type", "FeatureCollection")
@@ -91,7 +62,7 @@ object MapStyleBuilder {
         val root = JSONObject()
         root.put("version", 8)
         root.put("name", "AtlasGIS Offline")
-        root.put("font-faces", fontFaces())
+        root.put("glyphs", GLYPHS_URL)
 
         val sources = JSONObject()
         val styleLayers = JSONArray()

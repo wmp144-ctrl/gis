@@ -55,7 +55,11 @@ object MbtilesReader {
             val minZoom = metadata["minzoom"]?.toIntOrNull() ?: 0
             val maxZoom = metadata["maxzoom"]?.toIntOrNull() ?: 18
             val format = detectFormat(db, tables, metadata["format"])
-            val vectorLayers = if (format == TileFormat.VECTOR) readVectorLayers(metadata) else emptyList()
+            val vectorLayers = if (format == TileFormat.VECTOR) {
+                readVectorLayers(metadata).ifEmpty { discoverVectorLayers(db, maxZoom) }
+            } else {
+                emptyList()
+            }
             val bounds = parseBounds(metadata["bounds"]) ?: boundsFromTiles(db, minZoom)
             val tileSize = metadata["tile_size"]?.toIntOrNull()
                 ?: metadata["tilesize"]?.toIntOrNull()
@@ -172,6 +176,30 @@ object MbtilesReader {
         }.getOrNull()?.let { if (it.isNotEmpty()) return it }
         return emptyList()
     }
+
+    /**
+     * Reads the layer names straight from the tiles when the metadata carries no
+     * `vector_layers` block. Without this an archive whose producer skipped that
+     * metadata renders only the five fallback layers, so its POIs never appear.
+     */
+    private fun discoverVectorLayers(db: SQLiteDatabase, maxZoom: Int): List<String> = runCatching {
+        val names = LinkedHashSet<String>()
+        val zooms = listOf(maxZoom, maxZoom - 1, maxZoom - 2).filter { it > 0 }
+        for (zoom in zooms) {
+            db.rawQuery(
+                "SELECT tile_data FROM tiles WHERE zoom_level = ? LIMIT 8",
+                arrayOf(zoom.toString()),
+            ).use { cursor ->
+                while (cursor.moveToNext() && names.size < 64) {
+                    val data = cursor.getBlob(0) ?: continue
+                    if (data.isEmpty()) continue
+                    names.addAll(MvtDecoder.layerNames(data))
+                }
+            }
+            if (names.isNotEmpty()) break
+        }
+        names.toList()
+    }.getOrDefault(emptyList())
 
     private fun parseBounds(raw: String?): BoundingBox? {
         if (raw.isNullOrBlank()) return null

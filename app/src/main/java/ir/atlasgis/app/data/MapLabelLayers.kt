@@ -16,8 +16,10 @@ import org.json.JSONObject
  */
 internal object MapLabelLayers {
 
-    const val FONT_REGULAR = "Atlas Regular"
-    const val FONT_BOLD = "Atlas Bold"
+    // Names of the bundled glyph sets under assets/glyphs; the style turns them into
+    // "asset://glyphs/{fontstack}/{range}.pbf", so they must match the folder names.
+    const val FONT_REGULAR = "AtlasRegular"
+    const val FONT_BOLD = "AtlasBold"
 
     private val roadNameLayers = setOf(
         "transportation_name", "transportation_names", "street_labels", "street_label",
@@ -112,15 +114,29 @@ internal object MapLabelLayers {
             }
         }
 
-        // 5. POIs: icon plus name, the layer the user asked for.
+        // 5. POIs: icon plus name. Schemas call this layer poi, pois, amenity,
+        //    amenities, shops, tourism… so the check looks at the meaning, not at
+        //    one exact name.
         for (name in sourceLayers) {
             val raw = name.lowercase()
-            if (raw !in poiLayers && !raw.contains("poi")) continue
+            if (!isPoiLayer(raw)) continue
             handled.add(raw)
             result.put(poiSymbols(sourceId, name, opacity, palette))
         }
 
-        // 6. Any other naming layer (suburb labels, station labels, …).
+        // 6. Unknown schema: any remaining layer can still hold named points, so
+        //    they are drawn as icons with captions instead of disappearing.
+        for (name in sourceLayers) {
+            val raw = name.lowercase()
+            if (raw in handled) continue
+            val kind = VectorStyleHeuristics.classify(raw)
+            if (kind != VectorStyleHeuristics.Kind.NONE && kind != VectorStyleHeuristics.Kind.POI) continue
+            if (raw.contains("label") || raw.contains("name")) continue
+            handled.add(raw)
+            result.put(poiSymbols(sourceId, name, opacity, palette, requireName = true))
+        }
+
+        // 7. Any other naming layer (suburb labels, station labels, …).
         for (name in sourceLayers) {
             val raw = name.lowercase()
             if (raw in handled) continue
@@ -130,6 +146,12 @@ internal object MapLabelLayers {
     }
 
     // --------------------------------------------------------------- expressions
+
+    /** Layer names that stand for points of interest in the common schemas. */
+    private fun isPoiLayer(raw: String): Boolean =
+        raw in poiLayers || raw.contains("poi") || raw.contains("amenit") ||
+            raw.contains("shop") || raw.contains("tourism") || raw.contains("leisure") ||
+            raw.contains("food") || raw.contains("health") || raw.contains("accommodation")
 
     private fun get(property: String): JSONArray = JSONArray().put("get").put(property)
 
@@ -192,9 +214,13 @@ internal object MapLabelLayers {
         }
 
         // Two levels: the fine tag first (subclass / amenity / shop / maki …), then
-        // the coarse `class`, so a plain "shop" still gets a shop icon.
+        // the coarse `class`, and a plain marker for anything unrecognised. Without
+        // that last fallback an unknown tag renders no icon, and MapLibre drops the
+        // whole symbol — text included.
+        val byClass = match(JSONArray().put("downcase").put(classExpression()))
+        byClass.put(PoiClassifier.imageId(PoiClassifier.GENERIC))
         val nested = match(kind)
-        nested.put(match(JSONArray().put("downcase").put(classExpression())))
+        nested.put(byClass)
         return nested
     }
 
@@ -396,11 +422,18 @@ internal object MapLabelLayers {
         sourceLayer: String,
         opacity: Float,
         palette: MapPalette,
+        requireName: Boolean = false,
     ): JSONObject = JSONObject()
         .put("type", "symbol")
         .put("source", sourceId)
         .put("source-layer", sourceLayer)
         .put("minzoom", 14)
+        .put(
+            "filter",
+            JSONArray().put("all")
+                .put(JSONArray().put("==").put(JSONArray().put("geometry-type")).put("Point"))
+                .apply { if (requireName) put(hasName()) },
+        )
         .put(
             "layout",
             JSONObject()

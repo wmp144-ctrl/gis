@@ -3,6 +3,7 @@ package ir.atlasgis.app
 import ir.atlasgis.app.data.MapLayer
 import ir.atlasgis.app.data.MapLabelLayers
 import ir.atlasgis.app.data.MapStyleBuilder
+import ir.atlasgis.app.data.PlaceIndexer
 import ir.atlasgis.app.data.TileFormat
 import org.json.JSONArray
 import org.json.JSONObject
@@ -58,23 +59,52 @@ class MapLabelLayerTest {
     }
 
     @Test
-    fun styleShipsOfflineFontFacesForLatinAndPersian() {
+    fun styleShipsOfflineGlyphsForLatinAndPersian() {
         val style = styleFor()
-        assertFalse("native builds must not fetch a glyph server", style.has("glyphs"))
-        val faces = style.getJSONObject("font-faces")
-        assertNotNull(faces.optJSONArray(MapLabelLayers.FONT_REGULAR))
-        assertNotNull(faces.optJSONArray(MapLabelLayers.FONT_BOLD))
+        // font-faces renders Arabic-script labels reversed on MapLibre Native, so the
+        // bundled glyph PBFs are the on-device text path: local, offline, and ordered.
+        assertFalse("Arabic text breaks on the font-faces path", style.has("font-faces"))
+        val glyphs = style.getString("glyphs")
+        assertTrue(glyphs, glyphs.startsWith("asset://glyphs/"))
+        assertTrue(glyphs, glyphs.contains("{fontstack}") && glyphs.contains("{range}"))
 
-        val regular = faces.getJSONArray(MapLabelLayers.FONT_REGULAR)
-        assertEquals(2, regular.length())
-        val latin = regular.getJSONObject(0)
-        val arabic = regular.getJSONObject(1)
-        assertTrue(latin.getString("url").startsWith("asset://fonts/NotoSans"))
-        assertTrue(arabic.getString("url").contains("Arabic"))
-        // Persian needs U+0600-06FF, which only the Arabic face declares.
-        val arabicRanges = arabic.getJSONArray("unicode-range").toString()
-        assertTrue("Arabic range missing: $arabicRanges", arabicRanges.contains("U+0600-06FF"))
-        assertFalse(latin.getJSONArray("unicode-range").toString().contains("U+0600-06FF"))
+        // Both weights exist, with Latin, Arabic and the Persian presentation forms
+        // the platform's BiDi/shaping step asks for.
+        listOf(MapLabelLayers.FONT_REGULAR, MapLabelLayers.FONT_BOLD).forEach { stack ->
+            listOf("0-255", "1536-1791", "64256-64511", "65024-65279").forEach { range ->
+                val file = listOf("src/main/assets", "app/src/main/assets")
+                    .map { File("$it/glyphs/$stack/$range.pbf") }
+                    .firstOrNull { it.isFile }
+                assertTrue("missing glyph range $stack/$range", file != null && file.length() > 512)
+            }
+        }
+    }
+
+    @Test
+    fun everyNamedPointLayerGetsPoiIcons() {
+        // Schemas do not agree on the layer name; none of these may fall through.
+        val style = styleFor(listOf("water", "transportation", "amenities", "food_points", "poi"))
+        val symbolLayers = symbolLayers(style)
+        listOf("amenities", "food_points", "poi").forEach { layerName ->
+            assertTrue(
+                "no symbol layer for $layerName",
+                symbolLayers.any { it.optString("source-layer") == layerName },
+            )
+        }
+        // An unmatched tag must still draw a marker instead of dropping the symbol.
+        val icon = symbolLayers.first { it.optString("source-layer") == "poi" }
+            .getJSONObject("layout").getJSONArray("icon-image")
+        val fallback = icon.getJSONArray(icon.length() - 1)
+        assertEquals("atlas-generic", fallback.getString(fallback.length() - 1))
+    }
+
+    @Test
+    fun searchIndexAcceptsAnyPlaceLayer() {
+        assertTrue(PlaceIndexer.isIndexableLayer("amenities"))
+        assertTrue(PlaceIndexer.isIndexableLayer("poi"))
+        assertTrue(PlaceIndexer.isIndexableLayer("shops"))
+        assertFalse(PlaceIndexer.isIndexableLayer("building"))
+        assertFalse(PlaceIndexer.isIndexableLayer("transportation"))
     }
 
     @Test

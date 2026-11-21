@@ -96,8 +96,8 @@ class StyleAndOverlayJsonTest {
             .first { it.getString("id") == "atlas-raster-raster-1" }
         assertEquals(0.8, rasterLayerJson.getJSONObject("paint").getDouble("raster-opacity"), 0.001)
 
-        // Version 8 styles must not reference an unavailable glyph endpoint.
-        assertFalse(style.has("glyphs"))
+        // Glyphs must come from the bundled assets, never from the network.
+        assertTrue(style.getString("glyphs").startsWith("asset://glyphs/"))
     }
 
     @Test

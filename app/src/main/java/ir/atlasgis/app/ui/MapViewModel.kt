@@ -155,6 +155,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val placeIndexer = PlaceIndexer(db)
     private var searchJob: Job? = null
     private var indexJob: Job? = null
+    private var nearbyIndexJob: Job? = null
+    private var nearbyIndexKey: String? = null
 
     /** Material icon plates for POIs, rendered once and handed to every style load. */
     private val symbolImages: Map<String, Bitmap> by lazy {
@@ -266,6 +268,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun openSearch() {
         _sheet.value = Sheet.SEARCH
         ensureSearchIndex()
+        ensureNearbyPlaces()
     }
 
     fun closeSearch() {
@@ -282,6 +285,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _searchHits.value = emptyList()
             return
         }
+        ensureNearbyPlaces()
         searchJob = viewModelScope.launch {
             delay(140)
             val waypointHits = _waypoints.value
@@ -320,6 +324,31 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
             _searchIndexProgress.value = null
             // Results typed while indexing finished are refreshed now.
+            if (_searchQuery.value.trim().length >= 2) setSearchQuery(_searchQuery.value)
+        }
+    }
+
+    /**
+     * Adds the named POIs of the tiles around the camera to the index.
+     *
+     * The one-shot index of [ensureSearchIndex] has to stay at a low zoom for a
+     * country-sized archive, and POI layers only exist at street zoom, so without
+     * this pass a shop, mosque or pharmacy could be drawn on the map and still never
+     * be found by search. Re-indexing only happens when the map has moved a real
+     * distance, and duplicate rows are ignored by the database.
+     */
+    private fun ensureNearbyPlaces() {
+        val center = controller.camera.value?.center ?: return
+        val candidates = _layers.value.filter { it.visible && it.format == TileFormat.VECTOR }
+        if (candidates.isEmpty()) return
+        val key = candidates.joinToString(",") { it.id } + "|" +
+            (center.lat * 25).toInt() + ":" + (center.lon * 25).toInt()
+        if (key == nearbyIndexKey || nearbyIndexJob?.isActive == true) return
+        nearbyIndexKey = key
+        nearbyIndexJob = viewModelScope.launch {
+            candidates.forEach { layer ->
+                runCatching { placeIndexer.buildNear(layer, center.lat, center.lon) }
+            }
             if (_searchQuery.value.trim().length >= 2) setSearchQuery(_searchQuery.value)
         }
     }

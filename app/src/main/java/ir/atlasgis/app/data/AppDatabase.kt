@@ -124,6 +124,19 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         if (oldVersion < 6) {
             createPlacesTable(db)
         }
+        if (oldVersion in 6 until 7) {
+            // The index now also collects the POIs around the map view, so the same
+            // place can be inserted twice: drop the old duplicates and enforce one
+            // row per place from now on.
+            db.execSQL(
+                "DELETE FROM map_places WHERE id NOT IN " +
+                    "(SELECT min(id) FROM map_places GROUP BY layer_id, name_norm, lat, lon)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_places_unique " +
+                    "ON map_places(layer_id, name_norm, lat, lon)",
+            )
+        }
     }
 
     /** Searchable place index for vector archives; see [PlaceIndexer]. */
@@ -144,6 +157,10 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_places_norm ON map_places(name_norm)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_places_layer ON map_places(layer_id)")
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_places_unique " +
+                "ON map_places(layer_id, name_norm, lat, lon)",
+        )
         // Marker so an archive with no naming features is not re-indexed on every
         // search: an empty result is a valid, complete result.
         db.execSQL(
@@ -310,10 +327,12 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         if (rows.isEmpty()) return 0
         return synchronized(writeLock) {
             val db = writableDatabase
+            var inserted = 0
             db.beginTransaction()
             try {
                 val statement = db.compileStatement(
-                    "INSERT INTO map_places(layer_id, name, name_norm, klass, layer_name, lat, lon) " +
+                    "INSERT OR IGNORE INTO map_places" +
+                        "(layer_id, name, name_norm, klass, layer_name, lat, lon) " +
                         "VALUES(?, ?, ?, ?, ?, ?, ?)",
                 )
                 rows.forEach { row ->
@@ -325,13 +344,13 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
                     statement.bindString(5, row.layerName)
                     statement.bindDouble(6, row.lat)
                     statement.bindDouble(7, row.lon)
-                    statement.executeInsert()
+                    if (statement.executeInsert() != -1L) inserted++
                 }
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
             }
-            rows.size
+            inserted
         }
     }
 
@@ -570,7 +589,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
 
     companion object {
         private const val NAME = "atlasgis.db"
-        private const val VERSION = 6
+        private const val VERSION = 7
 
         fun newId(): String = UUID.randomUUID().toString()
 

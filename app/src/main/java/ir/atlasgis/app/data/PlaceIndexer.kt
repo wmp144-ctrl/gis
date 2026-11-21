@@ -7,7 +7,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.PI
 import kotlin.math.atan
+import kotlin.math.cos
+import kotlin.math.ln
 import kotlin.math.sinh
+import kotlin.math.tan
 
 /**
  * Builds the offline search index for one vector archive.
@@ -94,6 +97,74 @@ class PlaceIndexer(private val db: AppDatabase) {
             }
         }
 
+    /**
+     * Indexes the named points of the tiles around one position at street zoom.
+     *
+     * A country-sized archive has far too many z15 tiles to scan once, and the POI
+     * layer only exists at those zooms, so the searchable POIs are collected for the
+     * area the user is looking at. Calling it again as the map moves costs a handful
+     * of tile reads, and the unique index drops the points that are already stored.
+     */
+    suspend fun buildNear(
+        layer: MapLayer,
+        lat: Double,
+        lon: Double,
+        radius: Int = 3,
+    ): Int = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val file = File(layer.filePath)
+        if (layer.format != TileFormat.VECTOR || !file.exists()) return@withContext 0
+        val zoom = minOf(layer.maxZoom, 16)
+        if (zoom < layer.minZoom) return@withContext 0
+        val sqlite = runCatching { MbtilesReader.openReadOnly(file) }.getOrNull()
+            ?: return@withContext 0
+        try {
+            val world = 1 shl zoom
+            val latRad = Math.toRadians(lat.coerceIn(-85.0511, 85.0511))
+            val column = ((lon + 180.0) / 360.0 * world).toInt().coerceIn(0, world - 1)
+            val row = ((1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / PI) / 2.0 * world)
+                .toInt().coerceIn(0, world - 1)
+            val buffer = ArrayList<MapPlace>(256)
+            for (dx in -radius..radius) {
+                for (dy in -radius..radius) {
+                    val x = ((column + dx) % world + world) % world
+                    val y = row + dy
+                    if (y !in 0 until world) continue
+                    val tmsRow = world - 1 - y
+                    sqlite.rawQuery(
+                        "SELECT tile_data FROM tiles WHERE zoom_level = ? AND tile_column = ? " +
+                            "AND tile_row = ? LIMIT 1",
+                        arrayOf(zoom.toString(), x.toString(), tmsRow.toString()),
+                    ).use { cursor ->
+                        if (!cursor.moveToFirst()) return@use
+                        val data = cursor.getBlob(0)
+                        if (data == null || data.isEmpty()) return@use
+                        MvtDecoder.decode(data).forEach { point ->
+                            if (!isIndexableLayer(point.layer)) return@forEach
+                            val name = displayName(point.tags) ?: return@forEach
+                            buffer.add(
+                                MapPlace(
+                                    name = name,
+                                    klass = kindOf(point.tags),
+                                    layerName = point.layer,
+                                    lat = latitude(y + point.y, world),
+                                    lon = (x + point.x) / world * 360.0 - 180.0,
+                                    layerId = layer.id,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            if (buffer.isEmpty()) 0 else db.insertPlaces(layer.id, buffer)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (ignored: Throwable) {
+            0
+        } finally {
+            runCatching { sqlite.close() }
+        }
+    }
+
     private fun chooseZoom(sqlite: SQLiteDatabase, layer: MapLayer): Int? {
         val highest = minOf(layer.maxZoom, 16)
         val lowest = maxOf(layer.minZoom, 9)
@@ -127,17 +198,23 @@ class PlaceIndexer(private val db: AppDatabase) {
         private const val MAX_TILES = 3000L
         private const val MAX_ROWS = 200_000
 
-        private val indexableLayers = setOf(
-            "poi", "pois", "poi_label", "poi_labels", "pois_points",
-            "place", "places", "place_labels", "place_label", "place_label_points", "localities",
-            "water_name", "water_names", "water_label", "water_labels",
-            "mountain_peak", "mountain_peaks", "peak", "peaks",
-            "aerodrome_label", "airport_label", "airports", "aerodrome",
+        /**
+         * Only geometry and address layers are skipped. Every other layer may carry
+         * named points — `poi`, but also `amenities`, `shops` or a bespoke name —
+         * and a place the map shows must also be findable.
+         */
+        private val nonPlaceLayers = setOf(
+            "water", "waterway", "waterways", "landuse", "landcover", "land",
+            "transportation", "transportation_name", "transportation_names",
+            "road", "roads", "street", "streets", "rail", "railway",
+            "boundary", "boundaries", "admin", "aeroway", "route", "routes",
         )
 
         fun isIndexableLayer(name: String): Boolean {
             val key = name.lowercase()
-            return key in indexableLayers || key.contains("poi")
+            if (key in nonPlaceLayers) return false
+            return !key.contains("building") && !key.contains("housenumber") &&
+                !key.contains("address")
         }
 
         private fun firstOf(tags: Map<String, String>, vararg keys: String): String? {

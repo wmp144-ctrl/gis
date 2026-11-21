@@ -12,6 +12,41 @@ object MvtDecoder {
     /** A point feature of one tile, with coordinates normalised to 0..1 inside the tile. */
     data class Point(val layer: String, val tags: Map<String, String>, val x: Double, val y: Double)
 
+    /**
+     * Layer names declared by one tile, without decoding a single feature.
+     *
+     * Archives that ship no `vector_layers` metadata still name their layers inside
+     * every tile; this is how the style learns about `poi`, `transportation_name` or
+     * any other layer an unusual schema uses.
+     */
+    fun layerNames(bytes: ByteArray): List<String> {
+        val reader = Reader(bytes)
+        val names = ArrayList<String>(16)
+        while (reader.hasMore()) {
+            val key = reader.readVarint()
+            val field = (key ushr 3).toInt()
+            val wire = (key and 0x7).toInt()
+            if (field == 3 && wire == 2) {
+                readLayerName(reader.readBytes())?.let { names.add(it) }
+            } else {
+                reader.skip(wire)
+            }
+        }
+        return names
+    }
+
+    private fun readLayerName(bytes: ByteArray): String? {
+        val reader = Reader(bytes)
+        while (reader.hasMore()) {
+            val key = reader.readVarint()
+            val field = (key ushr 3).toInt()
+            val wire = (key and 0x7).toInt()
+            if (field == 1 && wire == 2) return String(reader.readBytes(), Charsets.UTF_8)
+            reader.skip(wire)
+        }
+        return null
+    }
+
     fun decode(bytes: ByteArray): List<Point> {
         val reader = Reader(bytes)
         val result = ArrayList<Point>(64)
