@@ -62,6 +62,7 @@ import kotlin.math.roundToInt
 fun MapBottomBar(
     layerSummary: String,
     layerCount: Int,
+    onTools: () -> Unit,
     onSearch: () -> Unit,
     onLayers: () -> Unit,
     onSettings: () -> Unit,
@@ -92,6 +93,7 @@ fun MapBottomBar(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            RoundIconButton(Icons.Rounded.GridView, "ابزارها", onTools)
             RoundIconButton(Icons.Rounded.Search, "جست‌وجوی مکان", onSearch)
             RoundIconButton(Icons.Rounded.Layers, "لایه‌ها", onLayers)
             RoundIconButton(Icons.Rounded.Settings, "تنظیمات", onSettings)
@@ -99,17 +101,15 @@ fun MapBottomBar(
     }
 }
 
-/** Zoom, compass, locate and the tools entry, stacked in the top-right corner. */
+/** Zoom, compass and locate, stacked in the top-right corner. */
 @Composable
 fun MapSideControls(
     bearing: Float,
     following: Boolean,
-    toolsActive: Boolean,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onResetBearing: () -> Unit,
     onLocate: () -> Unit,
-    onTools: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     GlassPanel(modifier = modifier, shape = RoundedCornerShape(20.dp)) {
@@ -141,13 +141,6 @@ fun MapSideControls(
             HorizontalDivider(color = AtlasColors.Outline, modifier = Modifier.width(20.dp))
             RoundIconButton(Icons.Rounded.Add, "بزرگ‌نمایی", onZoomIn)
             RoundIconButton(Icons.Rounded.Remove, "کوچک‌نمایی", onZoomOut)
-            RoundIconButton(
-                icon = Icons.Rounded.GridView,
-                contentDescription = "ابزارها",
-                onClick = onTools,
-                tint = if (toolsActive) AtlasColors.Accent else AtlasColors.TextPrimary,
-                background = if (toolsActive) AtlasColors.AccentSoft else Color.Transparent,
-            )
             HorizontalDivider(color = AtlasColors.Outline, modifier = Modifier.width(20.dp))
             RoundIconButton(
                 icon = Icons.Rounded.MyLocation,
@@ -596,53 +589,6 @@ fun MapScaleBar(metersPerPixel: Double, modifier: Modifier = Modifier) {
             )
         }
     }
-}
-
-@Composable
-fun CoordinateBar(
-    coordinateText: String,
-    gps: GpsFix?,
-    onCycleFormat: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        GlassPanel(shape = RoundedCornerShape(50)) {
-            Row(
-                modifier = Modifier
-                    .clickable(onClick = onCycleFormat)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Rounded.PinDrop,
-                    contentDescription = null,
-                    tint = AtlasColors.TextMuted,
-                    modifier = Modifier.size(12.dp),
-                )
-                Spacer(Modifier.width(5.dp))
-                Text(
-                    text = coordinateText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AtlasColors.TextPrimary,
-                    maxLines = 1,
-                )
-            }
-        }
-        if (gps != null) {
-            Spacer(Modifier.width(5.dp))
-            StatusChip(
-                text = AccuracyText(gps),
-                icon = Icons.Rounded.SatelliteAlt,
-                color = if (gps.accuracyMeters < 15f) AtlasColors.Accent else AtlasColors.Warning,
-            )
-        }
-    }
-}
-
-private fun AccuracyText(gps: GpsFix): String {
-    val accuracy = gps.accuracyMeters.roundToInt().toString().toPersianDigits()
-    val satellites = gps.satellites.toString().toPersianDigits()
-    return "$satellites ماهواره · ±$accuracy m"
 }
 
 @Composable

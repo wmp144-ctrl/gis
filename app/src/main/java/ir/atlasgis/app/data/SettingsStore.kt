@@ -11,7 +11,6 @@ data class AppSettings(
     val coordinateFormat: CoordinateFormat = CoordinateFormat.DECIMAL,
     val keepScreenOn: Boolean = true,
     val showScaleBar: Boolean = true,
-    val showCoordinateBar: Boolean = true,
 )
 
 class SettingsStore(context: Context) {
@@ -28,7 +27,6 @@ class SettingsStore(context: Context) {
         }.getOrDefault(CoordinateFormat.DECIMAL),
         keepScreenOn = prefs.getBoolean(KEY_KEEP_AWAKE, true),
         showScaleBar = prefs.getBoolean(KEY_SCALE, true),
-        showCoordinateBar = prefs.getBoolean(KEY_COORD_BAR, true),
     )
 
     fun updateCoordinateFormat(format: CoordinateFormat) {
@@ -52,11 +50,6 @@ class SettingsStore(context: Context) {
     fun setShowScaleBar(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SCALE, enabled).apply()
         _settings.value = _settings.value.copy(showScaleBar = enabled)
-    }
-
-    fun setShowCoordinateBar(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_COORD_BAR, enabled).apply()
-        _settings.value = _settings.value.copy(showCoordinateBar = enabled)
     }
 
     fun saveCamera(lat: Double, lon: Double, zoom: Double, bearing: Double) {
@@ -85,7 +78,6 @@ class SettingsStore(context: Context) {
         const val KEY_COORD = "coord_format"
         const val KEY_KEEP_AWAKE = "keep_awake"
         const val KEY_SCALE = "scale_bar"
-        const val KEY_COORD_BAR = "coord_bar"
         const val KEY_CAMERA = "last_camera"
     }
 }

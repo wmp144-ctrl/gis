@@ -701,16 +701,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------------------------------------------------------------- settings ops
 
-    fun cycleCoordinateFormat() = settingsStore.cycleCoordinateFormat()
-
     fun setCoordinateFormat(format: ir.atlasgis.app.core.CoordinateFormat) =
         settingsStore.updateCoordinateFormat(format)
 
     fun setKeepScreenOn(enabled: Boolean) = settingsStore.setKeepScreenOn(enabled)
 
     fun setShowScaleBar(enabled: Boolean) = settingsStore.setShowScaleBar(enabled)
-
-    fun setShowCoordinateBar(enabled: Boolean) = settingsStore.setShowCoordinateBar(enabled)
 
     fun setShowTracks(enabled: Boolean) {
         _showTracks.value = enabled

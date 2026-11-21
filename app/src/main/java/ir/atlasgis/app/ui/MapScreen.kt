@@ -194,7 +194,7 @@ fun MapScreen(viewModel: MapViewModel) {
                     .fillMaxSize()
                     .statusBarsPadding(),
             ) {
-                // Top-left: scale and coordinate readout.
+                // Top-left: scale only. Coordinates live in the long-press dialog now.
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -202,26 +202,16 @@ fun MapScreen(viewModel: MapViewModel) {
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     if (settings.showScaleBar) ControllerScaleBar(controller)
-                    if (settings.showCoordinateBar) {
-                        CoordinateReadout(
-                            controller = controller,
-                            gpsFlow = viewModel.gps,
-                            coordinateFormat = settings.coordinateFormat,
-                            onCycleFormat = viewModel::cycleCoordinateFormat,
-                        )
-                    }
                 }
 
-                // Top-right: compass, zoom, tools, locate.
+                // Top-right: compass, zoom, locate.
                 SideControlsHud(
                     controller = controller,
                     following = followMode,
-                    toolsActive = false,
                     onZoomIn = viewModel::zoomIn,
                     onZoomOut = viewModel::zoomOut,
                     onResetBearing = viewModel::resetBearing,
                     onLocate = viewModel::toggleFollowMode,
-                    onTools = { viewModel.openSheet(Sheet.TOOLS) },
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(end = 8.dp, top = 6.dp),
@@ -331,6 +321,7 @@ fun MapScreen(viewModel: MapViewModel) {
                     MapBottomBar(
                         layerSummary = activeLayerName,
                         layerCount = layers.size,
+                        onTools = { viewModel.openSheet(Sheet.TOOLS) },
                         onSearch = viewModel::openSearch,
                         onLayers = { viewModel.openSheet(Sheet.LAYERS) },
                         onSettings = { viewModel.openSheet(Sheet.SETTINGS) },
@@ -482,7 +473,6 @@ fun MapScreen(viewModel: MapViewModel) {
             onCoordinateFormat = viewModel::setCoordinateFormat,
             onKeepScreenOn = viewModel::setKeepScreenOn,
             onScaleBar = viewModel::setShowScaleBar,
-            onCoordinateBar = viewModel::setShowCoordinateBar,
             onGoTo = {
                 viewModel.closeSheet()
                 showGoToDialog = true
@@ -550,24 +540,20 @@ fun MapScreen(viewModel: MapViewModel) {
 private fun SideControlsHud(
     controller: MapController,
     following: Boolean,
-    toolsActive: Boolean,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onResetBearing: () -> Unit,
     onLocate: () -> Unit,
-    onTools: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val camera by controller.camera.collectAsStateWithLifecycle()
     MapSideControls(
         bearing = camera?.bearing ?: 0f,
         following = following,
-        toolsActive = toolsActive,
         onZoomIn = onZoomIn,
         onZoomOut = onZoomOut,
         onResetBearing = onResetBearing,
         onLocate = onLocate,
-        onTools = onTools,
         modifier = modifier,
     )
 }
@@ -580,24 +566,6 @@ private fun ControllerScaleBar(controller: MapController) {
         Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             MapScaleBar(metersPerPixel)
         }
-    }
-}
-
-@Composable
-private fun CoordinateReadout(
-    controller: MapController,
-    gpsFlow: StateFlow<GpsFix?>,
-    coordinateFormat: ir.atlasgis.app.core.CoordinateFormat,
-    onCycleFormat: () -> Unit,
-) {
-    val camera by controller.camera.collectAsStateWithLifecycle()
-    val gps by gpsFlow.collectAsStateWithLifecycle()
-    camera?.let { info ->
-        CoordinateBar(
-            coordinateText = formatCoordinate(info.center.lat, info.center.lon, coordinateFormat),
-            gps = gps,
-            onCycleFormat = onCycleFormat,
-        )
     }
 }
 

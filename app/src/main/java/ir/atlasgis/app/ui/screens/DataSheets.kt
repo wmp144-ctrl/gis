@@ -579,7 +579,6 @@ fun SettingsSheet(
     onCoordinateFormat: (CoordinateFormat) -> Unit,
     onKeepScreenOn: (Boolean) -> Unit,
     onScaleBar: (Boolean) -> Unit,
-    onCoordinateBar: (Boolean) -> Unit,
     onGoTo: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -631,12 +630,6 @@ fun SettingsSheet(
                 description = "نوار مقیاس در بالای نقشه",
                 checked = settings.showScaleBar,
                 onCheckedChange = onScaleBar,
-            )
-            SwitchRow(
-                title = "نمایش مختصات مرکز نقشه",
-                description = "مختصات مرکز نمایش با ضربه قابل تغییر قالب است",
-                checked = settings.showCoordinateBar,
-                onCheckedChange = onCoordinateBar,
             )
             Spacer(Modifier.height(10.dp))
 

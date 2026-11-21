@@ -13,8 +13,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import ir.atlasgis.app.core.CoordinateFormat
 import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.data.Waypoint
@@ -70,11 +73,53 @@ fun WaypointEditorDialog(
                     .verticalScroll(rememberScrollState())
                     .widthIn(max = 420.dp),
             ) {
-                Text(
-                    text = formatCoordinate(lat, lon, CoordinateFormat.DECIMAL),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AtlasColors.Accent,
-                )
+                // Coordinates of the long-pressed point: one tap copies them exactly
+                // as shown, so they can be pasted into another app or message.
+                val clipboard = LocalClipboardManager.current
+                var copied by remember { mutableStateOf(false) }
+                LaunchedEffect(copied) {
+                    if (copied) {
+                        delay(1600)
+                        copied = false
+                    }
+                }
+                val coordinate = formatCoordinate(lat, lon, CoordinateFormat.DECIMAL)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(AtlasColors.Surface)
+                        .padding(start = 10.dp, end = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PinDrop,
+                        contentDescription = null,
+                        tint = AtlasColors.Accent,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        text = if (copied) "$coordinate · کپی شد" else coordinate,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (copied) AtlasColors.Accent else AtlasColors.TextPrimary,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(coordinate))
+                            copied = true
+                        },
+                    ) {
+                        Icon(
+                            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                            contentDescription = "کپی مختصات",
+                            tint = if (copied) AtlasColors.Accent else AtlasColors.TextMuted,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = name,
