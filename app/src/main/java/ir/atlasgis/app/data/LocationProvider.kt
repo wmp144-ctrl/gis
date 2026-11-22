@@ -62,6 +62,15 @@ class LocationProvider(private val context: Context) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
+    /**
+     * Approximate (coarse) location is enough for the puck, but track recording needs
+     * the fine fix: coarse fixes are kilometre-scale and the jitter filter drops them,
+     * which would look like "recording started" while nothing is recorded.
+     */
+    fun hasPrecisePermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
     /** Whether any usable provider is currently enabled in system settings. */
     fun locationServicesEnabled(): Boolean = runCatching {
         manager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||

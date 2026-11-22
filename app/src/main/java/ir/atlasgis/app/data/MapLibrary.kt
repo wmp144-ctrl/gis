@@ -14,6 +14,14 @@ class MapLibrary(private val context: Context) {
 
     private val db = AppDatabase(context)
 
+    init {
+        // If the process died during an import, the copied `.part` archive is left
+        // behind and nothing will ever reference it again. Startup is the only moment
+        // when no import can be running, so the space is reclaimed safely here.
+        mapsDirectory.listFiles { file -> file.isFile && file.name.endsWith(PART_SUFFIX) }
+            ?.forEach { runCatching { it.delete() } }
+    }
+
     val mapsDirectory: File
         get() = File(context.filesDir, "maps").apply { if (!exists()) mkdirs() }
 
@@ -31,7 +39,7 @@ class MapLibrary(private val context: Context) {
         val totalBytes = querySize(uri)
         val id = AppDatabase.newId()
         val directory = mapsDirectory
-        val temp = File(directory, "$id.part")
+        val temp = File(directory, "$id$PART_SUFFIX")
         val target = File(directory, "$id.mbtiles")
 
         if (totalBytes > 0) {
@@ -226,6 +234,10 @@ class MapLibrary(private val context: Context) {
                     layer.visible && (layer.bounds?.contains(point) ?: true)
                 }
         }
+
+    private companion object {
+        const val PART_SUFFIX = ".part"
+    }
 
     private fun queryDisplayName(uri: Uri): String? = runCatching {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->

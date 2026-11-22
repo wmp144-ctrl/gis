@@ -7,12 +7,18 @@
  *
  *   AtlasRegular = Noto Sans Regular  (Latin, digits, punctuation)
  *                + Vazirmatn Regular (Persian/Arabic shaping forms)
- *   AtlasBold    = the bold pair
+ *                + Noto Sans Arabic Regular (fallback)
+ *   AtlasBold    = the bold trio
  *
  * Vazirmatn is the reference Persian UI face: closed counters, even stroke weight
  * and a proper set of Arabic presentation forms, which is what keeps street and
  * place names readable at 10-12 px on a map. Latin stays with Noto Sans because it
  * has the wider glyph set map labels need (accents, symbols, transliterations).
+ *
+ * Noto Sans Arabic comes last as a fallback only: fontnik's composite keeps the
+ * first font for a codepoint, so Vazirmatn still paints every Persian glyph, while
+ * the fallback supplies the Arabic Presentation Forms-A ligatures (FC00-FDFF) that
+ * Vazirmatn does not cover. Without it those codepoints silently render as blanks.
  *
  * Persian is only correct on MapLibre Native through glyph PBFs. With `font-faces`
  * every Arabic-script label is shaped left-to-right and laid out reversed; the glyph
@@ -38,10 +44,12 @@ const STACKS = {
   AtlasRegular: [
     path.join(ASSETS, 'fonts', 'NotoSans-Regular.ttf'),
     path.join(__dirname, 'fonts', 'vazirmatn', 'Vazirmatn-Regular.ttf'),
+    path.join(ASSETS, 'fonts', 'NotoSansArabic-Regular.ttf'),
   ],
   AtlasBold: [
     path.join(ASSETS, 'fonts', 'NotoSans-Bold.ttf'),
     path.join(__dirname, 'fonts', 'vazirmatn', 'Vazirmatn-Bold.ttf'),
+    path.join(ASSETS, 'fonts', 'NotoSansArabic-Bold.ttf'),
   ],
 };
 

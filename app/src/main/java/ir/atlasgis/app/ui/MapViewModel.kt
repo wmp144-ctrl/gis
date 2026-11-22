@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import ir.atlasgis.app.core.BoundingBox
 import ir.atlasgis.app.core.LatLon
 import ir.atlasgis.app.core.boundingBoxOf
+import ir.atlasgis.app.core.parseCoordinateInput
 import ir.atlasgis.app.core.pathLengthMeters
 import ir.atlasgis.app.core.polygonAreaSqMeters
 import ir.atlasgis.app.data.AppDatabase
@@ -754,6 +755,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _messages.tryEmit("برای ثبت مسیر، دسترسی موقعیت مکانی لازم است")
             return
         }
+        if (!locationProvider.hasPrecisePermission()) {
+            _messages.tryEmit("برای ثبت مسیر، دسترسی «دقیق» موقعیت مکانی لازم است؛ آن را از تنظیمات برنامه فعال کنید")
+            return
+        }
         _measure.value = MeasureUiState()
         _selectedWaypointId.value = null
         _recordArmed.value = true
@@ -769,6 +774,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _recordArmed.value = false
         if (!locationProvider.hasPermission()) {
             _messages.tryEmit("برای ثبت مسیر، دسترسی موقعیت مکانی لازم است")
+            return
+        }
+        if (!locationProvider.hasPrecisePermission()) {
+            _messages.tryEmit("برای ثبت مسیر، دسترسی «دقیق» موقعیت مکانی لازم است؛ آن را از تنظیمات برنامه فعال کنید")
             return
         }
         if (!locationProvider.locationServicesEnabled()) {
@@ -995,34 +1004,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    fun parseLatLon(input: String): LatLon? {
-        val latin = input.map { ch ->
-            if (ch in '۰'..'۹') ('0' + (ch - '۰')) else ch
-        }.joinToString("")
-            .replace('٫', '.')
-            .replace('،', ' ')
-            .replace('°', ' ')
-            .replace('′', ' ')
-            .replace('″', ' ')
-            .replace(Regex("[NSEWnsew]"), " ")
-        val tokens = Regex("[-+]?\\d+(?:\\.\\d+)?").findAll(latin)
-            .mapNotNull { it.value.toDoubleOrNull() }
-            .toList()
-        return when {
-            tokens.size >= 6 -> {
-                val lat = dmsToDecimal(tokens[0], tokens[1], tokens[2])
-                val lon = dmsToDecimal(tokens[3], tokens[4], tokens[5])
-                LatLon(lat, lon).takeIf { it.isValid() }
-            }
-            tokens.size >= 2 -> LatLon(tokens[0], tokens[1]).takeIf { it.isValid() }
-            else -> null
-        }
-    }
-
-    private fun dmsToDecimal(degrees: Double, minutes: Double, seconds: Double): Double {
-        val sign = if (degrees < 0) -1.0 else 1.0
-        return sign * (kotlin.math.abs(degrees) + minutes / 60.0 + seconds / 3600.0)
-    }
+    fun parseLatLon(input: String): LatLon? = parseCoordinateInput(input)
 
     fun notify(message: String) {
         _messages.tryEmit(message)

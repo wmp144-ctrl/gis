@@ -104,19 +104,24 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
             db.execSQL("ALTER TABLE map_layers ADD COLUMN style_preset TEXT")
         }
         if (oldVersion < 4) {
+            // Created with `visible` already: the seeding right below writes it, so
+            // building the v4 table without the column made the next insert fail.
             db.execSQL(
                 """
                 CREATE TABLE IF NOT EXISTS waypoint_categories (
                     key TEXT PRIMARY KEY NOT NULL,
                     label TEXT NOT NULL,
                     color INTEGER NOT NULL,
-                    icon TEXT NOT NULL
+                    icon TEXT NOT NULL,
+                    visible INTEGER NOT NULL DEFAULT 1
                 )
                 """.trimIndent(),
             )
             seedCategoryStyles(db)
         }
-        if (oldVersion < 5) {
+        if (oldVersion == 4) {
+            // Only databases created by v4 still need the column; newer tables above
+            // already have it, and re-adding it would abort the upgrade.
             db.execSQL(
                 "ALTER TABLE waypoint_categories ADD COLUMN visible INTEGER NOT NULL DEFAULT 1",
             )
