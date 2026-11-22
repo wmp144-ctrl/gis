@@ -237,6 +237,49 @@ class MapLabelLayerTest {
     }
 
     @Test
+    fun namingLayersAreNotPaintedAsGeometry() {
+        // transportation_name repeats the road lines just to carry text. Painting it
+        // doubled every street; water_name is line data and must not become a fill.
+        val style = styleFor(listOf("transportation", "transportation_name", "water", "water_name", "building", "poi", "place"))
+        val layers = style.getJSONArray("layers")
+        val painted = (0 until layers.length())
+            .map { layers.getJSONObject(it) }
+            .filter { it.optString("type") != "symbol" && it.has("source-layer") }
+            .map { it.optString("source-layer") }
+        assertFalse("transportation_name painted", painted.contains("transportation_name"))
+        assertFalse("water_name painted", painted.contains("water_name"))
+        assertFalse("place painted", painted.contains("place"))
+        assertFalse("poi painted", painted.contains("poi"))
+        assertTrue("roads still painted", painted.contains("transportation"))
+    }
+
+    @Test
+    fun buildingsArePaintedBelowRoads() {
+        // Layer order in the archive must not decide whether buildings cover streets.
+        val style = styleFor(listOf("transportation", "building", "water", "place", "poi"))
+        val layers = style.getJSONArray("layers")
+        fun firstIndex(type: String, sourceLayer: String): Int =
+            (0 until layers.length()).first { index ->
+                val layer = layers.getJSONObject(index)
+                layer.optString("type") == type && layer.optString("source-layer") == sourceLayer
+            }
+        assertTrue(firstIndex("fill", "building") < firstIndex("line", "transportation"))
+    }
+
+    @Test
+    fun landuseKeepsBuiltUpAreasNeutral() {
+        val style = styleFor(listOf("landuse", "transportation"))
+        val layers = style.getJSONArray("layers")
+        val landuse = (0 until layers.length())
+            .map { layers.getJSONObject(it) }
+            .first { it.optString("source-layer") == "landuse" }
+        // A match on class/subclass keeps parks green and residential blocks neutral.
+        val color = landuse.getJSONObject("paint").get("fill-color")
+        assertTrue("landuse colour must be data-driven", color is JSONArray)
+        assertEquals("match", (color as JSONArray).getString(0))
+    }
+
+    @Test
     fun archivesWithoutNamingLayersStayCheap() {
         // No place/poi/water_name layer: the only symbols are street names that the
         // road layer itself may carry, and they disappear on archives without names.

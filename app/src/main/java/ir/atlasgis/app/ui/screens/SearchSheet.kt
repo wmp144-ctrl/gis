@@ -149,7 +149,8 @@ fun SearchSheet(
                 !typing -> {
                     Box(Modifier.weight(1f)) {
                         Text(
-                            text = "حداقل دو حرف از نام مکان یا خیابان را بنویسید. " +
+                            text = "حداقل دو حرف از نام مکان یا خیابان را بنویسید؛ نوع مکان هم " +
+                                "قابل جست‌وجو است، مثلاً «داروخانه» یا «نانوایی». " +
                                 "جست‌وجو کاملاً آفلاین و روی همان نقشه‌ای است که باز کرده‌اید.",
                             style = MaterialTheme.typography.bodySmall,
                             color = AtlasColors.TextMuted,

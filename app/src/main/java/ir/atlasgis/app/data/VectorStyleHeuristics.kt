@@ -23,24 +23,37 @@ internal object VectorStyleHeuristics {
         val palette = preset.palette
         val result = JSONArray()
         val names = sourceLayers.ifEmpty { listOf("water", "landuse", "transportation", "building", "place") }
-        for (name in names) {
+        // Naming layers (transportation_name, water_name, street_labels, …) carry the
+        // same lines/points again just for their labels. Painting them would double
+        // every road and turn a line-only water_name into a stray fill, so only the
+        // geometry layers are painted here; the labels are added at the end.
+        val paintable = names.filter { !isNamingLayer(it) }
+
+        // Fill pass first: water, land cover and buildings. Building footprints must
+        // never end up above the roads, whatever order the archive lists its layers in.
+        for (name in paintable) {
             when (classify(name)) {
                 Kind.WATER -> result.put(
                     fill(sourceId, name, waterColor(name, palette), opacity, outline = palette.waterDeep),
                 )
-                Kind.WATERWAY -> result.put(
-                    line(
-                        sourceId, name, palette.waterway, opacity,
-                        width = zoomInterpolate(6 to 0.5, 12 to 2.0, 16 to 3.6, 20 to 7.5),
-                    ),
-                )
-                Kind.GREEN -> result.put(
-                    fill(sourceId, name, greenColor(name, palette), opacity * 0.92f),
-                )
+                Kind.GREEN -> result.put(greenFill(sourceId, name, opacity, palette))
                 Kind.BUILDING -> result.put(
                     fill(
                         sourceId, name, palette.building, opacity * 0.95f,
                         minZoom = 13, outline = palette.buildingOutline,
+                    ),
+                )
+                else -> Unit
+            }
+        }
+
+        // Line pass: waterways, road casings and fills, rail and boundaries.
+        for (name in paintable) {
+            when (classify(name)) {
+                Kind.WATERWAY -> result.put(
+                    line(
+                        sourceId, name, palette.waterway, opacity,
+                        width = zoomInterpolate(6 to 0.5, 12 to 2.0, 16 to 3.6, 20 to 7.5),
                     ),
                 )
                 Kind.ROAD -> {
@@ -85,12 +98,13 @@ internal object VectorStyleHeuristics {
                 // [MapLabelLayers] below; a second dot layer would only add noise.
                 Kind.POI -> Unit
                 Kind.NONE -> Unit
+                else -> Unit
             }
         }
         if (result.length() == 0) {
-            // Unknown schema: render every layer as a neutral area plus outline so the
-            // archive is still explorable.
-            for (name in names) {
+            // Unknown schema: render every unrecognised layer as a neutral area plus
+            // outline so the archive is still explorable.
+            for (name in paintable.filter { classify(it) == Kind.NONE }) {
                 result.put(fill(sourceId, name, palette.unknownLand, opacity * 0.9f))
                 result.put(
                     line(
@@ -107,23 +121,46 @@ internal object VectorStyleHeuristics {
 
     internal enum class Kind { WATER, WATERWAY, GREEN, BUILDING, ROAD, RAIL, BOUNDARY, POI, NONE }
 
+    /** Layers that exist only to place text; see [MapLabelLayers]. */
+    private val namingLayers = setOf(
+        "transportation_name", "transportation_names", "transportation_label",
+        "street_labels", "street_label", "street_labels_points", "street_name", "streets_name",
+        "roads_name", "roads_labels", "road_label", "road_labels", "highway_name",
+        "highway_labels", "water_name", "water_names", "water_label", "water_labels",
+        "waterway_name", "sea_label", "seas", "aerodrome_label", "airport_label", "airports",
+        "mountain_peak", "mountain_peaks", "peak", "peaks", "place", "places",
+        "place_label", "place_labels", "locality", "localities", "poi", "pois",
+        "poi_label", "poi_labels",
+    )
+
+    internal fun isNamingLayer(rawName: String): Boolean {
+        val name = rawName.lowercase()
+        return name in namingLayers || name.endsWith("_name") || name.endsWith("_names") ||
+            name.endsWith("_label") || name.endsWith("_labels") || name.contains("label")
+    }
+
     internal fun classify(rawName: String): Kind {
         val name = rawName.lowercase()
+        val tokens = name.split('_', '-', ' ').filter { it.isNotBlank() }
         return when {
             name.contains("building") -> Kind.BUILDING
             name.contains("waterway") || name.contains("river") || name.contains("stream") ||
                 name.contains("canal") -> Kind.WATERWAY
-            name.contains("water") || name.contains("ocean") || name.contains("sea") ||
-                name.contains("lake") -> Kind.WATER
+            name.contains("water") || name.contains("ocean") ||
+                tokens.any { it in setOf("sea", "seas", "lake", "lakes", "pond", "reservoir") } -> Kind.WATER
             name.contains("rail") || name.contains("transit") -> Kind.RAIL
             name.contains("boundary") || name.contains("admin") -> Kind.BOUNDARY
             name.contains("transport") || name.contains("road") || name.contains("street") ||
                 name.contains("highway") || name.contains("aeroway") || name.contains("runway") ||
                 name.contains("pier") || name.contains("bridge") -> Kind.ROAD
-            name.contains("landcover") || name.contains("landuse") || name.contains("park") ||
-                name.contains("grass") || name.contains("wood") || name.contains("forest") ||
-                name.contains("glacier") || name.contains("vegetation") ||
-                name == "land" -> Kind.GREEN
+            // A `parking` layer is not a park; match the token, not the substring.
+            tokens.any {
+                it in setOf(
+                    "park", "parks", "grass", "grassland", "wood", "forest", "glacier",
+                    "vegetation", "landcover", "landuse", "meadow", "scrub", "orchard",
+                    "cemetery", "garden", "golf", "pitch", "playground", "recreation",
+                )
+            } || name == "land" -> Kind.GREEN
             name.contains("place") || name.contains("poi") || name.contains("peak") ||
                 name.contains("label") || name.contains("city") || name.contains("town") ||
                 name.contains("locality") -> Kind.POI
@@ -132,14 +169,54 @@ internal object VectorStyleHeuristics {
     }
 
     private fun waterColor(name: String, palette: MapPalette): String =
-        if (name.contains("ocean") || name.contains("sea")) palette.waterDeep else palette.water
+        if (name.contains("ocean") ||
+            name.split('_', '-').any { it == "sea" || it == "seas" }
+        ) {
+            palette.waterDeep
+        } else {
+            palette.water
+        }
 
-    private fun greenColor(name: String, palette: MapPalette): String = when {
-        name.contains("wood") || name.contains("forest") -> palette.forest
-        name.contains("park") || name.contains("grass") -> palette.park
-        name.contains("glacier") || name.contains("ice") -> palette.ice
-        else -> palette.green
+    /**
+     * Land cover uses one colour on purpose, but `landuse` also contains dense urban
+     * classes: painting residential, commercial and industrial blocks green made a
+     * whole city look like a park. The match keeps greens green and renders the built
+     * classes as a neutral ground colour.
+     */
+    private fun greenFill(
+        sourceId: String,
+        sourceLayer: String,
+        opacity: Float,
+        palette: MapPalette,
+    ): JSONObject {
+        val layer = fill(sourceId, sourceLayer, palette.green, opacity * 0.92f)
+        val klass = JSONArray().put("downcase").put(
+            JSONArray().put("to-string").put(
+                JSONArray().put("coalesce")
+                    .put(JSONArray().put("get").put("class"))
+                    .put(JSONArray().put("get").put("subclass"))
+                    .put(JSONArray().put("get").put("kind"))
+                    .put(""),
+            ),
+        )
+        val colors = JSONArray().put("match").put(klass)
+        listOf("wood", "forest", "tree", "vegetation", "scrub", "heath", "orchard")
+            .forEach { colors.put(it).put(palette.forest) }
+        listOf(
+            "park", "grass", "garden", "recreation_ground", "pitch", "playground",
+            "golf_course", "meadow", "village_green", "nature_reserve", "national_park",
+            "greenfield", "cemetery",
+        ).forEach { colors.put(it).put(palette.park) }
+        listOf("glacier", "ice").forEach { colors.put(it).put(palette.ice) }
+        listOf(
+            "residential", "commercial", "retail", "industrial", "railway", "hospital",
+            "school", "university", "military", "quarry", "landfill", "construction",
+        ).forEach { colors.put(it).put(palette.unknownLand) }
+        colors.put(palette.green)
+        layer.getJSONObject("paint").put("fill-color", colors)
+        return layer
     }
+
 
     private fun fill(
         sourceId: String,

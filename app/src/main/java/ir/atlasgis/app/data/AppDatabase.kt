@@ -363,13 +363,30 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
     fun searchPlaces(query: String, limit: Int = 40): List<MapPlace> = synchronized(writeLock) {
         val needle = PlaceIndexer.normalize(query)
         if (needle.length < 2) return emptyList()
+        val match = "%${PlaceIndexer.escapeLike(needle)}%"
+        val prefix = "${PlaceIndexer.escapeLike(needle)}%"
+        // The user may search for a place type ("بیمارستان", "نانوایی") instead of a
+        // name. Those labels map to several raw tag values, which are matched against
+        // the indexed `klass`; names still rank above type-only matches.
+        val kinds = PlaceIndexer.kindValuesFor(needle)
+        val kindClause = if (kinds.isEmpty()) {
+            ""
+        } else {
+            " OR lower(klass) IN (${kinds.joinToString(",") { "?" }})"
+        }
+        val args = ArrayList<String>(kinds.size + 4)
+        args += match
+        args += match
+        kinds.forEach { args += it.lowercase() }
+        args += prefix
+        args += limit.toString()
         val result = ArrayList<MapPlace>(limit)
         readableDatabase.rawQuery(
             "SELECT name, klass, layer_name, lat, lon, layer_id FROM map_places " +
-                "WHERE name_norm LIKE ? " +
-                "ORDER BY CASE WHEN name_norm LIKE ? THEN 0 ELSE 1 END, length(name_norm), name " +
-                "LIMIT ?",
-            arrayOf("%$needle%", "$needle%", limit.toString()),
+                "WHERE name_norm LIKE ? ESCAPE '\\' OR lower(klass) LIKE ? ESCAPE '\\'$kindClause " +
+                "ORDER BY CASE WHEN name_norm LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, " +
+                "length(name_norm), name LIMIT ?",
+            args.toTypedArray(),
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 result.add(

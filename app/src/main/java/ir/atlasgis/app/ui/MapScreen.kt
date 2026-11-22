@@ -308,16 +308,6 @@ fun MapScreen(viewModel: MapViewModel) {
                         onExpand = { recordingCardExpanded = true },
                     )
 
-                    SnackbarHost(hostState = snackbarHostState) { data ->
-                        Snackbar(
-                            snackbarData = data,
-                            containerColor = AtlasColors.SurfaceElevated,
-                            contentColor = AtlasColors.TextPrimary,
-                            actionColor = AtlasColors.Accent,
-                            shape = RoundedCornerShape(14.dp),
-                        )
-                    }
-
                     MapBottomBar(
                         layerSummary = activeLayerName,
                         layerCount = layers.size,
@@ -327,6 +317,27 @@ fun MapScreen(viewModel: MapViewModel) {
                         onSettings = { viewModel.openSheet(Sheet.SETTINGS) },
                     )
                 }
+            }
+        }
+
+        // Outside the chrome overlay on purpose: hiding the buttons with a map tap
+        // must not also hide warnings such as "GPS is off" or a failed import.
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 10.dp)
+                .padding(bottom = if (chromeVisible) 82.dp else 16.dp),
+        ) {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = AtlasColors.SurfaceElevated,
+                    contentColor = AtlasColors.TextPrimary,
+                    actionColor = AtlasColors.Accent,
+                    shape = RoundedCornerShape(14.dp),
+                )
             }
         }
 

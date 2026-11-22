@@ -244,6 +244,34 @@ class PlaceIndexer(private val db: AppDatabase) {
             ) ?: ""
 
         /**
+         * Raw tag values behind a Persian place-type search. "بیمارستان" maps to
+         * hospital, clinic, doctors… so a type search finds places whose names do not
+         * contain the word the user typed.
+         */
+        fun kindValuesFor(query: String): List<String> {
+            val needle = query.trim()
+            if (needle.length < 2) return emptyList()
+            val keys = PoiClassifier.labels
+                .filterKeys { it != PoiClassifier.GENERIC }
+                .filterValues { it.contains(needle, ignoreCase = true) }
+                .keys
+            if (keys.isEmpty()) return emptyList()
+            return PoiClassifier.tags.entries
+                .asSequence()
+                .filter { it.value in keys }
+                .map { it.key }
+                .distinct()
+                .take(24)
+                .toList()
+        }
+
+        /** Escapes LIKE wildcards so a literal `%` or `_` in a query is not a pattern. */
+        fun escapeLike(value: String): String = value
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+
+        /**
          * Persian-aware folding so "ك" (Arabic kaf) and "ک" (Persian kaf) match, and
          * so zero-width non-joiners and diacritics never make a search fail.
          */

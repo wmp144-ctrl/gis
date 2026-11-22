@@ -93,12 +93,12 @@ internal object MapLabelLayers {
             val raw = name.lowercase()
             if (raw !in placeLayers) continue
             handled.add(raw)
-            result.put(placeLabels(sourceId, name, palette, regionPlaces, 3.0, 11.0, 15.0, true, letterSpacing = 0.08, uppercase = true))
-            result.put(placeLabels(sourceId, name, palette, cityPlaces, 5.0, 11.5, 17.0, true, letterSpacing = 0.02))
-            result.put(placeLabels(sourceId, name, palette, listOf("borough", "county", "suburb"), 9.0, 10.5, 13.5, false))
-            result.put(placeLabels(sourceId, name, palette, urbanPlaces, 12.0, 9.5, 12.5, false))
+            result.put(placeLabels(sourceId, name, palette, regionPlaces, 3.0, 12.0, 16.0, true, letterSpacing = 0.08, uppercase = true))
+            result.put(placeLabels(sourceId, name, palette, cityPlaces, 5.0, 12.5, 17.0, true, letterSpacing = 0.02))
+            result.put(placeLabels(sourceId, name, palette, listOf("borough", "county", "suburb"), 9.0, 11.5, 14.0, false))
+            result.put(placeLabels(sourceId, name, palette, urbanPlaces, 12.0, 10.5, 13.0, false))
             // Schemas that carry no class at all: still show the point at a usable zoom.
-            result.put(placeLabels(sourceId, name, palette, emptyList(), 10.0, 10.5, 13.0, false))
+            result.put(placeLabels(sourceId, name, palette, emptyList(), 10.0, 11.0, 13.5, false))
         }
 
         // 4. Airports and peaks, before the dense POI layer.
@@ -255,9 +255,9 @@ internal object MapLabelLayers {
                     .put(
                         "text-size",
                         zoomInterpolate(
-                            10 to (if (major) 10.5 else 9.5),
-                            14 to (if (major) 12.0 else 10.5),
-                            18 to (if (major) 14.0 else 12.0),
+                            10 to (if (major) 11.0 else 10.0),
+                            14 to (if (major) 13.0 else 11.5),
+                            18 to (if (major) 15.0 else 13.0),
                         ),
                     )
                     .put("text-letter-spacing", 0.03)
@@ -361,7 +361,7 @@ internal object MapLabelLayers {
                 .put("symbol-spacing", 420)
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_REGULAR))
-                .put("text-size", zoomInterpolate(12 to 10.5, 16 to 12.5, 19 to 14.0))
+                .put("text-size", zoomInterpolate(12 to 11.5, 16 to 13.0, 19 to 15.0))
                 .put("text-letter-spacing", 0.04)
                 .put("text-max-angle", 30)
                 .put("text-rotation-alignment", "map")
@@ -448,7 +448,7 @@ internal object MapLabelLayers {
                 .put("icon-optional", true)
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_REGULAR))
-                .put("text-size", zoomInterpolate(14 to 10.5, 17 to 12.5, 20 to 14.0))
+                .put("text-size", zoomInterpolate(14 to 11.5, 17 to 13.5, 20 to 15.0))
                 .put("text-anchor", "top")
                 .put("text-offset", JSONArray().put(0).put(1.05))
                 .put("text-max-width", 6.5)
@@ -462,7 +462,7 @@ internal object MapLabelLayers {
                 .put("icon-opacity", opacity.coerceIn(0.4f, 1f).toDouble())
                 .put("text-color", palette.poiText)
                 .put("text-halo-color", palette.labelHalo)
-                .put("text-halo-width", 1.6)
+                .put("text-halo-width", 1.8)
                 .put("text-halo-blur", 0.3),
         )
 
@@ -485,7 +485,7 @@ internal object MapLabelLayers {
                 .put("icon-optional", true)
                 .put("text-field", nameExpression())
                 .put("text-font", JSONArray().put(FONT_BOLD))
-                .put("text-size", zoomInterpolate(9 to 11.0, 14 to 13.0))
+                .put("text-size", zoomInterpolate(9 to 12.0, 14 to 14.0))
                 .put("text-anchor", "top")
                 .put("text-offset", JSONArray().put(0).put(1.1))
                 .put("text-max-width", 8)
@@ -513,7 +513,7 @@ internal object MapLabelLayers {
                 JSONObject()
                     .put("text-field", nameExpression())
                     .put("text-font", JSONArray().put(FONT_REGULAR))
-                    .put("text-size", zoomInterpolate(11 to 10.0, 16 to 12.0))
+                    .put("text-size", zoomInterpolate(11 to 11.0, 16 to 13.0))
                     .put("text-letter-spacing", 0.04)
                     .put("text-max-width", 7)
                     .put("symbol-sort-key", rankExpression()),
@@ -538,7 +538,7 @@ internal object MapLabelLayers {
                 JSONObject()
                     .put("text-field", nameExpression())
                     .put("text-font", JSONArray().put(FONT_REGULAR))
-                    .put("text-size", zoomInterpolate(12 to 9.5, 17 to 12.0))
+                    .put("text-size", zoomInterpolate(12 to 10.5, 17 to 13.0))
                     .put("text-max-width", 7)
                     .put("text-optional", true)
                     .put("symbol-sort-key", rankExpression()),
