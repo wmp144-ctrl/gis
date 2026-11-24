@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.atlasgis.app.core.CoordinateFormat
@@ -29,6 +30,7 @@ import ir.atlasgis.app.core.formatSpeed
 import ir.atlasgis.app.core.toPersianDigits
 import ir.atlasgis.app.data.AppSettings
 import ir.atlasgis.app.data.GpsFix
+import ir.atlasgis.app.data.PlaceIndexer
 import ir.atlasgis.app.data.Track
 import ir.atlasgis.app.data.Waypoint
 import ir.atlasgis.app.data.WaypointCategoryStyle
@@ -47,6 +49,7 @@ fun WaypointsSheet(
     waypoints: List<Waypoint>,
     gps: GpsFix?,
     categoryStyles: List<WaypointCategoryStyle>,
+    coordinateFormat: CoordinateFormat = CoordinateFormat.DECIMAL,
     onDismiss: () -> Unit,
     onAddAtCenter: () -> Unit,
     onShow: (Waypoint) -> Unit,
@@ -62,13 +65,13 @@ fun WaypointsSheet(
     var query by remember { mutableStateOf("") }
     var manageCategories by remember { mutableStateOf(false) }
     val filtered = remember(waypoints, query) {
-        val needle = query.trim()
+        val needle = PlaceIndexer.normalize(query)
         if (needle.isEmpty()) {
             waypoints
         } else {
             waypoints.filter {
-                it.name.contains(needle, ignoreCase = true) ||
-                    it.note.contains(needle, ignoreCase = true)
+                PlaceIndexer.normalize(it.name).contains(needle) ||
+                    PlaceIndexer.normalize(it.note).contains(needle)
             }
         }
     }
@@ -154,7 +157,21 @@ fun WaypointsSheet(
             }
             Spacer(Modifier.height(8.dp))
             if (filtered.isEmpty()) {
-                Box(Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(vertical = 22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        Icons.Rounded.Place,
+                        contentDescription = null,
+                        tint = if (waypoints.isEmpty()) AtlasColors.Accent else AtlasColors.TextMuted,
+                        modifier = Modifier.size(28.dp),
+                    )
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = if (waypoints.isEmpty()) {
                             "با نگه‌داشتن انگشت روی نقشه یا دکمه + یک نقطه بسازید."
@@ -163,8 +180,23 @@ fun WaypointsSheet(
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = AtlasColors.TextMuted,
-                        modifier = Modifier.padding(vertical = 22.dp),
+                        textAlign = TextAlign.Center,
                     )
+                    if (waypoints.isEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            onClick = onAddAtCenter,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AtlasColors.Accent,
+                                contentColor = AtlasColors.OnAccent,
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(Icons.Rounded.AddLocationAlt, null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("افزودن نقطه در مرکز نقشه", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                 }
             } else {
                 LazyColumn(
@@ -181,6 +213,7 @@ fun WaypointsSheet(
                                     waypoint.position,
                                 )
                             },
+                            coordinateFormat = coordinateFormat,
                             onClick = { onShow(waypoint) },
                             onEdit = { onEdit(waypoint) },
                             onDelete = { onDelete(waypoint) },
@@ -216,6 +249,7 @@ fun WaypointsSheet(
 private fun WaypointRow(
     waypoint: Waypoint,
     distanceMeters: Double?,
+    coordinateFormat: CoordinateFormat,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -254,7 +288,7 @@ private fun WaypointRow(
                     text = buildString {
                         append(categoryLabel(waypoint.category))
                         if (distanceMeters != null) append(" · ${formatDistance(distanceMeters)}")
-                        else append(" · ${formatCoordinate(waypoint.lat, waypoint.lon, CoordinateFormat.DECIMAL)}")
+                        else append(" · ${formatCoordinate(waypoint.lat, waypoint.lon, coordinateFormat)}")
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = AtlasColors.TextMuted,
@@ -412,7 +446,9 @@ fun TracksSheet(
 @Composable
 private fun TrackRow(track: Track, onClick: () -> Unit) {
     val date = remember(track.startedAt) {
-        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(track.startedAt))
+        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US)
+            .format(Date(track.startedAt))
+            .toPersianDigits()
     }
     GlassPanel(Modifier.fillMaxWidth()) {
         Row(
@@ -478,7 +514,9 @@ private fun TrackDetailDialog(
     onExport: (Boolean) -> Unit,
 ) {
     val date = remember(track.startedAt) {
-        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(track.startedAt))
+        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US)
+            .format(Date(track.startedAt))
+            .toPersianDigits()
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -579,6 +617,7 @@ fun SettingsSheet(
     onCoordinateFormat: (CoordinateFormat) -> Unit,
     onKeepScreenOn: (Boolean) -> Unit,
     onScaleBar: (Boolean) -> Unit,
+    onShowCoordinates: (Boolean) -> Unit,
     onGoTo: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -599,6 +638,12 @@ fun SettingsSheet(
 
             Text("قالب نمایش مختصات", style = MaterialTheme.typography.labelMedium, color = AtlasColors.TextSecondary)
             Spacer(Modifier.height(8.dp))
+            Text(
+                "این قالب روی نوار مختصات نقشه و کارت نقطه اثر می‌گذارد.",
+                style = MaterialTheme.typography.labelSmall,
+                color = AtlasColors.TextMuted,
+            )
+            Spacer(Modifier.height(6.dp))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -630,6 +675,12 @@ fun SettingsSheet(
                 description = "نوار مقیاس در بالای نقشه",
                 checked = settings.showScaleBar,
                 onCheckedChange = onScaleBar,
+            )
+            SwitchRow(
+                title = "نمایش مختصات مرکز",
+                description = "مختصات مرکز نقشه را با قالب انتخابی نشان می‌دهد؛ برای کپی روی آن بزنید",
+                checked = settings.showCoordinates,
+                onCheckedChange = onShowCoordinates,
             )
             Spacer(Modifier.height(10.dp))
 
@@ -668,7 +719,7 @@ fun SettingsSheet(
             Spacer(Modifier.height(14.dp))
 
             Text(
-                text = "AtlasGIS 1.0 — نمایش آفلاین MBTiles با موتور رندر MapLibre Native (OpenGL ES). " +
+                text = "AtlasGIS 1.0.0 — نمایش آفلاین MBTiles با موتور رندر MapLibre Native (OpenGL ES). " +
                     "همه داده‌ها روی همین دستگاه ذخیره می‌شوند و برنامه بدون اینترنت کار می‌کند.",
                 style = MaterialTheme.typography.labelSmall,
                 color = AtlasColors.TextMuted,

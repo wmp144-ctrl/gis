@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -42,6 +45,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.atlasgis.app.core.LatLon
@@ -60,7 +64,7 @@ import ir.atlasgis.app.ui.theme.AtlasColors
  * vector archive contains. Nothing leaves the device; results come from the place
  * index built from the map file itself.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SearchSheet(
     query: String,
@@ -87,6 +91,9 @@ fun SearchSheet(
                 .fillMaxHeight(0.92f)
                 .padding(horizontal = 12.dp),
         ) {
+            val quickSearches = remember {
+                listOf("کافه", "نانوایی", "داروخانه", "بیمارستان", "پارکینگ", "مسجد", "سوپرمارکت", "پارک")
+            }
             SectionHeader(
                 title = "جست‌وجوی مکان",
                 subtitle = "اماکن نقشه و نقاط ذخیره‌شده",
@@ -95,7 +102,7 @@ fun SearchSheet(
             OutlinedTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = { Text("نام خیابان، فروشگاه، مسجد، بیمارستان…", color = AtlasColors.TextMuted) },
+                placeholder = { Text("نام مکان، فروشگاه، مسجد، بیمارستان…", color = AtlasColors.TextMuted) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null, tint = AtlasColors.TextMuted) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
@@ -147,26 +154,93 @@ fun SearchSheet(
 
             when {
                 !typing -> {
-                    Box(Modifier.weight(1f)) {
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
                         Text(
-                            text = "حداقل دو حرف از نام مکان یا خیابان را بنویسید؛ نوع مکان هم " +
+                            "جست‌وجوی سریع",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = AtlasColors.TextSecondary,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            quickSearches.forEach { term ->
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(AtlasColors.SurfaceElevated)
+                                        .clickable { onQueryChange(term) }
+                                        .padding(horizontal = 11.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Search,
+                                        contentDescription = null,
+                                        tint = AtlasColors.Accent,
+                                        modifier = Modifier.size(13.dp),
+                                    )
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        term,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = AtlasColors.TextPrimary,
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(18.dp))
+                        Text(
+                            text = "حداقل دو حرف از نام مکان را بنویسید؛ نوع مکان هم " +
                                 "قابل جست‌وجو است، مثلاً «داروخانه» یا «نانوایی». " +
                                 "جست‌وجو کاملاً آفلاین و روی همان نقشه‌ای است که باز کرده‌اید.",
                             style = MaterialTheme.typography.bodySmall,
                             color = AtlasColors.TextMuted,
-                            modifier = Modifier.padding(vertical = 22.dp),
                         )
                     }
                 }
 
                 hits.isEmpty() && indexProgress == null -> {
-                    Box(Modifier.weight(1f)) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Rounded.SearchOff,
+                                contentDescription = null,
+                                tint = AtlasColors.TextMuted,
+                                modifier = Modifier.size(30.dp),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "مکانی با این نام پیدا نشد. املای دیگری را امتحان کنید یا " +
+                                    "نقشهٔ برداری دیگری با لایهٔ اماکن اضافه کنید.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AtlasColors.TextMuted,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                }
+
+                hits.isEmpty() && indexProgress != null -> {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Text(
-                            text = "مکانی با این نام پیدا نشد. املای دیگری را امتحان کنید یا " +
-                                "نقشهٔ برداری دیگری با لایهٔ اماکن اضافه کنید.",
+                            "در حال خواندن اماکن نقشه…",
                             style = MaterialTheme.typography.bodySmall,
                             color = AtlasColors.TextMuted,
-                            modifier = Modifier.padding(vertical = 22.dp),
                         )
                     }
                 }
@@ -177,6 +251,14 @@ fun SearchSheet(
                         contentPadding = PaddingValues(bottom = 14.dp),
                         modifier = Modifier.weight(1f),
                     ) {
+                        item {
+                            Text(
+                                text = "${hits.size.toString().toPersianDigits()} نتیجه",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = AtlasColors.TextSecondary,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            )
+                        }
                         // No item keys: two identical POIs can share a name and a
                         // position, and duplicate keys would crash the list.
                         itemsIndexed(hits) { _, hit ->

@@ -47,6 +47,7 @@ fun WaypointEditorDialog(
     lat: Double,
     lon: Double,
     styles: List<WaypointCategoryStyle>,
+    coordinateFormat: CoordinateFormat = CoordinateFormat.DECIMAL,
     onDismiss: () -> Unit,
     onCreateCategory: (WaypointCategoryStyle) -> Unit,
     onSave: (name: String, note: String, category: String) -> Unit,
@@ -83,7 +84,7 @@ fun WaypointEditorDialog(
                         copied = false
                     }
                 }
-                val coordinate = formatCoordinate(lat, lon, CoordinateFormat.DECIMAL)
+                val coordinate = formatCoordinate(lat, lon, coordinateFormat)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -336,7 +337,11 @@ fun DeleteConfirmDialog(
 }
 
 @Composable
-fun PermissionGate(onRequest: () -> Unit, modifier: Modifier = Modifier) {
+fun PermissionGate(
+    onRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenSettings: (() -> Unit)? = null,
+) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
@@ -353,6 +358,13 @@ fun PermissionGate(onRequest: () -> Unit, modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onRequest) { Text("اجازه دسترسی", color = AtlasColors.Accent) }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = onRequest) { Text("اجازه دسترسی", color = AtlasColors.Accent) }
+            if (onOpenSettings != null) {
+                TextButton(onClick = onOpenSettings) {
+                    Text("تنظیمات برنامه", color = AtlasColors.TextSecondary)
+                }
+            }
+        }
     }
 }

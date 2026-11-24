@@ -128,7 +128,7 @@ object PoiClassifier {
         "florist" to "گل‌فروشی",
         "hardware" to "ابزارفروشی",
         "laundry" to "خشکشویی",
-        "electronics" to "لوازم و پوشاک",
+        "electronics" to "کالا و لوازم",
         "hospital" to "بیمارستان",
         "pharmacy" to "داروخانه",
         "veterinary" to "دامپزشکی",

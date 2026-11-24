@@ -11,6 +11,7 @@ data class AppSettings(
     val coordinateFormat: CoordinateFormat = CoordinateFormat.DECIMAL,
     val keepScreenOn: Boolean = true,
     val showScaleBar: Boolean = true,
+    val showCoordinates: Boolean = true,
 )
 
 class SettingsStore(context: Context) {
@@ -27,6 +28,7 @@ class SettingsStore(context: Context) {
         }.getOrDefault(CoordinateFormat.DECIMAL),
         keepScreenOn = prefs.getBoolean(KEY_KEEP_AWAKE, true),
         showScaleBar = prefs.getBoolean(KEY_SCALE, true),
+        showCoordinates = prefs.getBoolean(KEY_COORDINATES, true),
     )
 
     fun updateCoordinateFormat(format: CoordinateFormat) {
@@ -52,6 +54,11 @@ class SettingsStore(context: Context) {
         _settings.value = _settings.value.copy(showScaleBar = enabled)
     }
 
+    fun setShowCoordinates(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_COORDINATES, enabled).apply()
+        _settings.value = _settings.value.copy(showCoordinates = enabled)
+    }
+
     fun saveCamera(lat: Double, lon: Double, zoom: Double, bearing: Double) {
         prefs.edit()
             .putString(KEY_CAMERA, "$lat,$lon,$zoom,$bearing")
@@ -60,24 +67,34 @@ class SettingsStore(context: Context) {
 
     data class SavedCamera(val lat: Double, val lon: Double, val zoom: Double, val bearing: Double)
 
-    fun loadCamera(): SavedCamera? {
-        val raw = prefs.getString(KEY_CAMERA, null) ?: return null
-        val parts = raw.split(',')
-        if (parts.size != 4) return null
-        return runCatching {
-            SavedCamera(
-                lat = parts[0].toDouble(),
-                lon = parts[1].toDouble(),
-                zoom = parts[2].toDouble(),
-                bearing = parts[3].toDouble(),
-            )
-        }.getOrNull()
-    }
+    fun loadCamera(): SavedCamera? = parseSavedCamera(prefs.getString(KEY_CAMERA, null))
 
-    private companion object {
-        const val KEY_COORD = "coord_format"
-        const val KEY_KEEP_AWAKE = "keep_awake"
-        const val KEY_SCALE = "scale_bar"
-        const val KEY_CAMERA = "last_camera"
+    companion object {
+        private const val KEY_COORD = "coord_format"
+        private const val KEY_KEEP_AWAKE = "keep_awake"
+        private const val KEY_SCALE = "scale_bar"
+        private const val KEY_COORDINATES = "coordinates"
+        private const val KEY_CAMERA = "last_camera"
+
+        /**
+         * Rejects corrupt or out-of-range saved cameras. A bad value would otherwise
+         * be handed straight to MapLibre on the first frame, where an impossible
+         * latitude can abort the map instead of simply starting at the default view.
+         */
+        internal fun parseSavedCamera(raw: String?): SavedCamera? {
+            if (raw.isNullOrBlank()) return null
+            val parts = raw.split(',')
+            if (parts.size != 4) return null
+            val values = parts.map { it.trim().toDoubleOrNull() ?: return null }
+            val lat = values[0]
+            val lon = values[1]
+            val zoom = values[2]
+            val bearing = values[3]
+            if (!lat.isFinite() || lat !in -90.0..90.0) return null
+            if (!lon.isFinite() || lon !in -180.0..180.0) return null
+            if (!zoom.isFinite() || zoom !in 1.0..22.0) return null
+            if (!bearing.isFinite()) return null
+            return SavedCamera(lat, lon, zoom, ((bearing % 360.0) + 360.0) % 360.0)
+        }
     }
 }

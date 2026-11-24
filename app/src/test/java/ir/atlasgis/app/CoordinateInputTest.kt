@@ -49,6 +49,13 @@ class CoordinateInputTest {
     }
 
     @Test
+    fun rejectsMinutesAndSecondsAtOrAboveSixty() {
+        assertNull(parseCoordinateInput("35 99 0 N 51 23 20 E"))
+        assertNull(parseCoordinateInput("35 41 61 N 51 23 20 E"))
+        assertNull(parseCoordinateInput("35 41 21 N 51 60 0 E"))
+    }
+
+    @Test
     fun invalidInputIsRejected() {
         assertNull(parseCoordinateInput(""))
         assertNull(parseCoordinateInput("تهران"))

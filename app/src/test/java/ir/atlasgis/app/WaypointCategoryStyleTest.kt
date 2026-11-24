@@ -5,6 +5,7 @@ import ir.atlasgis.app.data.Waypoint
 import ir.atlasgis.app.data.WaypointCategory
 import ir.atlasgis.app.data.WaypointCategoryStyle
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,6 +35,14 @@ class WaypointCategoryStyleTest {
             assertTrue("blank label for ${category.key}", style.label.isNotBlank())
         }
         assertEquals(styles.size, styles.map { it.key }.toSet().size)
+    }
+
+    @Test
+    fun builtInCategoriesAreProtectedFromDeletion() {
+        WaypointCategory.entries.forEach { category ->
+            assertTrue(category.key, WaypointCategoryStyle.isBuiltIn(category.key))
+        }
+        assertFalse(WaypointCategoryStyle.isBuiltIn(WaypointCategoryStyle.custom("دکل", 0xFF3ED598.toInt(), "flag").key))
     }
 
     @Test

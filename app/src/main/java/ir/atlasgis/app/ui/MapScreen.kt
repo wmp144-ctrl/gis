@@ -1,8 +1,11 @@
 package ir.atlasgis.app.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -19,17 +22,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ir.atlasgis.app.core.CoordinateFormat
 import ir.atlasgis.app.core.LatLon
 import ir.atlasgis.app.core.distanceMeters
-import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.data.GpsFix
 import ir.atlasgis.app.data.MeasureMode
 import ir.atlasgis.app.data.RecordingState
@@ -79,6 +84,7 @@ fun MapScreen(viewModel: MapViewModel) {
     val searchIndexProgress by viewModel.searchIndexProgress.collectAsStateWithLifecycle()
     val searchFocus by viewModel.searchFocus.collectAsStateWithLifecycle()
     val cardsScroll = rememberScrollState()
+    val clipboard = LocalClipboardManager.current
 
     val recordingBadge by remember(viewModel) {
         viewModel.recording.map { RecordingBadge(it.active, it.paused) }.distinctUntilChanged()
@@ -149,6 +155,23 @@ fun MapScreen(viewModel: MapViewModel) {
         }
     }
 
+    // Back closes the temporary map state (measure, search pin, point card or the
+    // hidden chrome) before it leaves the screen. Sheets and dialogs keep their own
+    // back handling, so this is only active when none of them is open.
+    BackHandler(
+        enabled = sheet == Sheet.NONE && pendingWaypoint == null && editingWaypoint == null &&
+            deleteWaypointTarget == null && !showGoToDialog && importing == null &&
+            (measure.active || recordArmed || searchFocus != null || selectedWaypointId != null || !chromeVisible),
+    ) {
+        when {
+            measure.active -> viewModel.stopMeasure()
+            recordArmed -> viewModel.cancelArmRecording()
+            searchFocus != null -> viewModel.clearSearchFocus()
+            selectedWaypointId != null -> viewModel.selectWaypoint(null)
+            else -> viewModel.setChromeVisible(true)
+        }
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -202,6 +225,15 @@ fun MapScreen(viewModel: MapViewModel) {
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     if (settings.showScaleBar) ControllerScaleBar(controller)
+                    if (settings.showCoordinates) {
+                        ControllerCoordinateReadout(
+                            controller = controller,
+                            format = settings.coordinateFormat,
+                        ) { text ->
+                            clipboard.setText(AnnotatedString(text))
+                            viewModel.notify("مختصات کپی شد")
+                        }
+                    }
                 }
 
                 // Top-right: compass, zoom, locate.
@@ -362,14 +394,22 @@ fun MapScreen(viewModel: MapViewModel) {
                     .navigationBarsPadding()
                     .padding(bottom = 130.dp, start = 20.dp, end = 20.dp),
             ) {
-                PermissionGate(onRequest = {
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION,
-                        ),
-                    )
-                })
+                PermissionGate(
+                    onRequest = {
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION,
+                            ),
+                        )
+                    },
+                    onOpenSettings = {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        runCatching { context.startActivity(intent) }
+                    },
+                )
             }
         }
 
@@ -418,6 +458,7 @@ fun MapScreen(viewModel: MapViewModel) {
             waypoints = waypoints,
             gps = gps,
             categoryStyles = categoryStyles,
+            coordinateFormat = settings.coordinateFormat,
             onDismiss = viewModel::closeSheet,
             onAddAtCenter = {
                 val center = controller.center()
@@ -484,6 +525,7 @@ fun MapScreen(viewModel: MapViewModel) {
             onCoordinateFormat = viewModel::setCoordinateFormat,
             onKeepScreenOn = viewModel::setKeepScreenOn,
             onScaleBar = viewModel::setShowScaleBar,
+            onShowCoordinates = viewModel::setShowCoordinates,
             onGoTo = {
                 viewModel.closeSheet()
                 showGoToDialog = true
@@ -501,6 +543,7 @@ fun MapScreen(viewModel: MapViewModel) {
             lat = point.lat,
             lon = point.lon,
             styles = categoryStyles,
+            coordinateFormat = settings.coordinateFormat,
             onDismiss = viewModel::cancelPendingWaypoint,
             onCreateCategory = viewModel::updateCategoryStyle,
             onSave = { name, note, category ->
@@ -515,6 +558,7 @@ fun MapScreen(viewModel: MapViewModel) {
             lat = waypoint.lat,
             lon = waypoint.lon,
             styles = categoryStyles,
+            coordinateFormat = settings.coordinateFormat,
             onDismiss = viewModel::cancelEditingWaypoint,
             onCreateCategory = viewModel::updateCategoryStyle,
             onSave = { name, note, category ->
@@ -577,6 +621,23 @@ private fun ControllerScaleBar(controller: MapController) {
         Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             MapScaleBar(metersPerPixel)
         }
+    }
+}
+
+@Composable
+private fun ControllerCoordinateReadout(
+    controller: MapController,
+    format: CoordinateFormat,
+    onCopy: (String) -> Unit,
+) {
+    val camera by controller.camera.collectAsStateWithLifecycle()
+    camera?.let { info ->
+        MapCoordinateReadout(
+            lat = info.center.lat,
+            lon = info.center.lon,
+            format = format,
+            onCopy = onCopy,
+        )
     }
 }
 

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -93,7 +94,7 @@ fun CategoryManagerDialog(
                         .verticalScroll(rememberScrollState()),
                 ) {
                     Text(
-                        "برای تغییر نام، رنگ و آیکون روی دسته بزنید. با آیکون چشم، نمایش نقاط آن دسته روی نقشه را روشن یا خاموش کنید.",
+                        "برای تغییر نام، رنگ و آیکون روی دسته بزنید. با آیکون چشم، نمایش نقاط آن دسته روی نقشه را روشن یا خاموش کنید. دسته‌های پیش‌فرض با قفل مشخص شده‌اند و حذف نمی‌شوند.",
                         style = MaterialTheme.typography.labelSmall,
                         color = AtlasColors.TextMuted,
                     )
@@ -101,6 +102,7 @@ fun CategoryManagerDialog(
                     styles.forEach { style ->
                         CategoryStyleRow(
                             style = style,
+                            canDelete = !WaypointCategoryStyle.isBuiltIn(style.key),
                             onClick = { editingKey = style.key },
                             onVisibility = { onVisibility(style, !style.visible) },
                             onDelete = { deleteTarget = style },
@@ -160,6 +162,7 @@ fun CategoryManagerDialog(
 @Composable
 private fun CategoryStyleRow(
     style: WaypointCategoryStyle,
+    canDelete: Boolean,
     onClick: () -> Unit,
     onVisibility: () -> Unit,
     onDelete: () -> Unit,
@@ -190,12 +193,23 @@ private fun CategoryStyleRow(
                 modifier = Modifier.size(19.dp),
             )
         }
-        IconButton(onClick = onDelete) {
+        if (canDelete) {
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = "حذف ${style.label}",
+                    tint = AtlasColors.TextMuted,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        } else {
+            // Built-in keys are restored on every launch, so deleting them would not
+            // stick; a lock makes that visible instead of silently ignoring the tap.
             Icon(
-                Icons.Rounded.Delete,
-                contentDescription = "حذف ${style.label}",
+                Icons.Rounded.Lock,
+                contentDescription = "دستهٔ پیش‌فرض؛ قابل حذف نیست",
                 tint = AtlasColors.TextMuted,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.padding(horizontal = 12.dp).size(15.dp),
             )
         }
         Icon(

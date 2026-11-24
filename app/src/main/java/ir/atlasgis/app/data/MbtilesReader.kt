@@ -60,7 +60,7 @@ object MbtilesReader {
             } else {
                 emptyList()
             }
-            val bounds = parseBounds(metadata["bounds"]) ?: boundsFromTiles(db, minZoom)
+            val bounds = parseBounds(metadata["bounds"]) ?: boundsFromTiles(db)
             val tileSize = metadata["tile_size"]?.toIntOrNull()
                 ?: metadata["tilesize"]?.toIntOrNull()
                 ?: 256
@@ -219,20 +219,24 @@ object MbtilesReader {
     }
 
     /** Derives coverage from the lowest zoom level when metadata lacks `bounds`. */
-    private fun boundsFromTiles(db: SQLiteDatabase, minZoom: Int): BoundingBox? {
+    private fun boundsFromTiles(db: SQLiteDatabase): BoundingBox? {
         return runCatching {
+            // Use the archive's real minimum zoom. Metadata `minzoom` can disagree
+            // with the tiles table, and using it here shifts the derived bounds.
+            val zoom = db.rawQuery("SELECT min(zoom_level) FROM tiles", null).use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getInt(0) else null
+            } ?: return@runCatching null
             db.rawQuery(
                 "SELECT min(tile_column), max(tile_column), min(tile_row), max(tile_row) " +
-                    "FROM tiles WHERE zoom_level = (SELECT min(zoom_level) FROM tiles)",
-                null,
+                    "FROM tiles WHERE zoom_level = ?",
+                arrayOf(zoom.toString()),
             ).use { cursor ->
                 if (!cursor.moveToFirst() || cursor.isNull(0)) return@use null
                 val minX = cursor.getInt(0)
                 val maxX = cursor.getInt(1)
                 val minY = cursor.getInt(2)
                 val maxY = cursor.getInt(3)
-                val zoom = minZoom.coerceIn(0, 24)
-                val n = 1 shl zoom
+                val n = 1 shl zoom.coerceIn(0, 24)
                 val west = minX.toDouble() / n * 360.0 - 180.0
                 val east = (maxX + 1).toDouble() / n * 360.0 - 180.0
                 // TMS rows grow northwards: the largest row is the northern edge.

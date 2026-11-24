@@ -41,6 +41,9 @@ data class WaypointCategoryStyle(
         fun defaultFor(category: WaypointCategory): WaypointCategoryStyle =
             defaults().first { it.key == category.key }
 
+        /** Built-in categories are re-seeded on every launch, so deleting them cannot stick. */
+        fun isBuiltIn(key: String): Boolean = WaypointCategory.entries.any { it.key == key }
+
         /** A brand new user category with a stable, collision-free key. */
         fun custom(label: String, color: Int, icon: String): WaypointCategoryStyle =
             WaypointCategoryStyle(

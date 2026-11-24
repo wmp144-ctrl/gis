@@ -2,6 +2,7 @@ package ir.atlasgis.app.data
 
 import android.util.Xml
 import ir.atlasgis.app.core.LatLon
+import ir.atlasgis.app.core.distanceMeters
 import ir.atlasgis.app.core.newId
 import ir.atlasgis.app.core.pathLengthMeters
 import org.json.JSONArray
@@ -40,7 +41,12 @@ object GeoFileCodec {
                         "geometry",
                         JSONObject()
                             .put("type", "Point")
-                            .put("coordinates", JSONArray().put(waypoint.lon).put(waypoint.lat)),
+                            .put(
+                                "coordinates",
+                                JSONArray().put(waypoint.lon).put(waypoint.lat).apply {
+                                    waypoint.elevation?.let { put(it) }
+                                },
+                            ),
                     ),
             )
         }
@@ -115,12 +121,22 @@ object GeoFileCodec {
 
     fun parse(content: String): ImportResult {
         val trimmed = content.trimStart('\uFEFF', ' ', '\n', '\r', '\t')
-        return when {
-            trimmed.startsWith("{") -> parseGeoJson(trimmed)
-            trimmed.startsWith("<") -> parseGpx(trimmed)
-            else -> ImportResult()
+        return try {
+            when {
+                trimmed.startsWith("{") -> parseGeoJson(trimmed)
+                trimmed.startsWith("<") -> parseGpx(trimmed)
+                else -> ImportResult()
+            }
+        } catch (error: IllegalArgumentException) {
+            throw error
+        } catch (error: Exception) {
+            throw IllegalArgumentException("فایل ورودی یک GPX یا GeoJSON معتبر نیست", error)
         }
     }
+
+    /** Coordinates outside WGS84 are rejected instead of entering the database. */
+    private fun isValidPosition(lat: Double, lon: Double): Boolean =
+        lat.isFinite() && lon.isFinite() && LatLon(lat, lon).isValid()
 
     private fun parseGeoJson(text: String): ImportResult {
         val root = JSONObject(text)
@@ -131,31 +147,51 @@ object GeoFileCodec {
         fun handleGeometry(geometry: JSONObject?, properties: JSONObject) {
             if (geometry == null) return
             val type = geometry.optString("type")
-            val coordinates = geometry.optJSONArray("coordinates") ?: return
             val name = properties.optString("name")
                 .ifBlank { properties.optString("title") }
                 .ifBlank { "نقطه واردشده" }
             val note = properties.optString("description")
                 .ifBlank { properties.optString("desc") }
+            // A collection has no `coordinates` of its own, so it must be handled
+            // before the coordinate lookup below would return early.
+            if (type == "GeometryCollection") {
+                val geometries = geometry.optJSONArray("geometries") ?: return
+                for (i in 0 until geometries.length()) {
+                    handleGeometry(geometries.optJSONObject(i), properties)
+                }
+                return
+            }
+            val coordinates = geometry.optJSONArray("coordinates") ?: return
+            fun addPoint(position: JSONArray) {
+                val lon = position.optDouble(0, Double.NaN)
+                val lat = position.optDouble(1, Double.NaN)
+                if (!isValidPosition(lat, lon)) return
+                waypoints.add(
+                    Waypoint(
+                        id = newId(),
+                        name = name,
+                        note = note,
+                        category = categoryKey(properties.optString("category")),
+                        lat = lat,
+                        lon = lon,
+                        elevation = if (position.length() > 2) position.optDouble(2) else null,
+                        createdAt = now,
+                        updatedAt = now,
+                    ),
+                )
+            }
+
+            fun addRing(ring: JSONArray) {
+                val points = parsePath(ring).toMutableList()
+                if (points.size >= 4 && points.first() == points.last()) points.removeAt(points.lastIndex)
+                if (points.size >= 2) tracks.add(trackFrom(points, name, now))
+            }
+
             when (type) {
-                "Point" -> {
-                    val position = coordinates
-                    val lon = position.optDouble(0, Double.NaN)
-                    val lat = position.optDouble(1, Double.NaN)
-                    if (lat.isFinite() && lon.isFinite()) {
-                        waypoints.add(
-                            Waypoint(
-                                id = newId(),
-                                name = name,
-                                note = note,
-                                category = WaypointCategory.GENERAL.key,
-                                lat = lat,
-                                lon = lon,
-                                elevation = if (position.length() > 2) position.optDouble(2) else null,
-                                createdAt = now,
-                                updatedAt = now,
-                            ),
-                        )
+                "Point" -> addPoint(coordinates)
+                "MultiPoint" -> {
+                    for (i in 0 until coordinates.length()) {
+                        coordinates.optJSONArray(i)?.let(::addPoint)
                     }
                 }
                 "LineString", "MultiLineString" -> {
@@ -166,17 +202,16 @@ object GeoFileCodec {
                     }
                 }
                 "Polygon" -> {
-                    val rings = coordinates
-                    for (i in 0 until rings.length()) {
-                        val points = parsePath(rings.optJSONArray(i) ?: continue).toMutableList()
-                        if (points.size >= 4 && points.first() == points.last()) points.removeAt(points.lastIndex)
-                        if (points.size >= 2) tracks.add(trackFrom(points, name, now))
+                    for (i in 0 until coordinates.length()) {
+                        coordinates.optJSONArray(i)?.let(::addRing)
                     }
                 }
-                "GeometryCollection" -> {
-                    val geometries = geometry.optJSONArray("geometries") ?: return
-                    for (i in 0 until geometries.length()) {
-                        handleGeometry(geometries.optJSONObject(i), properties)
+                "MultiPolygon" -> {
+                    for (p in 0 until coordinates.length()) {
+                        val polygon = coordinates.optJSONArray(p) ?: continue
+                        for (r in 0 until polygon.length()) {
+                            polygon.optJSONArray(r)?.let(::addRing)
+                        }
                     }
                 }
             }
@@ -206,7 +241,7 @@ object GeoFileCodec {
             val position = array.optJSONArray(i) ?: continue
             val lon = position.optDouble(0, Double.NaN)
             val lat = position.optDouble(1, Double.NaN)
-            if (lat.isFinite() && lon.isFinite()) points.add(LatLon(lat, lon))
+            if (isValidPosition(lat, lon)) points.add(LatLon(lat, lon))
         }
         return points
     }
@@ -247,13 +282,13 @@ object GeoFileCodec {
             val data = currentWpt ?: return
             val lat = data.optDouble("lat", Double.NaN)
             val lon = data.optDouble("lon", Double.NaN)
-            if (lat.isFinite() && lon.isFinite()) {
+            if (isValidPosition(lat, lon)) {
                 waypoints.add(
                     Waypoint(
                         id = newId(),
                         name = data.optString("name").ifBlank { "نقطه GPX" },
                         note = data.optString("desc"),
-                        category = WaypointCategory.fromKey(data.optString("type")).key,
+                        category = categoryKey(data.optString("type")),
                         lat = lat,
                         lon = lon,
                         elevation = data.optDouble("ele").takeIf { it.isFinite() },
@@ -268,6 +303,7 @@ object GeoFileCodec {
         fun flushTrack() {
             if (currentTrack.size >= 2) {
                 val points = currentTrack.toList()
+                val gains = elevationGains(points)
                 tracks.add(
                     Track(
                         id = newId(),
@@ -281,9 +317,9 @@ object GeoFileCodec {
                         },
                         startedAt = points.first().timestamp.takeIf { it > 0 } ?: now,
                         endedAt = points.last().timestamp.takeIf { it > 0 } ?: now,
-                        ascentMeters = 0.0,
-                        descentMeters = 0.0,
-                        maxSpeedMps = 0.0,
+                        ascentMeters = gains.first,
+                        descentMeters = gains.second,
+                        maxSpeedMps = peakSpeedMps(points),
                         color = "#FF9F45",
                         isRecording = false,
                     ),
@@ -316,7 +352,7 @@ object GeoFileCodec {
                                 lat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull() ?: Double.NaN,
                                 lon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull() ?: Double.NaN,
                             )
-                            if (point.lat.isFinite() && point.lon.isFinite()) currentTrack.add(point)
+                            if (isValidPosition(point.lat, point.lon)) currentTrack.add(point)
                         }
                     }
                 }
@@ -365,6 +401,54 @@ object GeoFileCodec {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /** Keeps built-in and user (`custom-…`) category keys across an export/import. */
+    private fun categoryKey(raw: String?): String {
+        val value = raw?.trim().orEmpty()
+        if (value.isEmpty()) return WaypointCategory.GENERAL.key
+        return WaypointCategory.entries.firstOrNull { it.key == value }?.key
+            ?: value.takeIf { it.startsWith("custom-") }
+            ?: WaypointCategory.GENERAL.key
+    }
+
+    private fun peakSpeedMps(points: List<TrackPoint>): Double {
+        var maximum = 0.0
+        for (i in 1 until points.size) {
+            val seconds = (points[i].timestamp - points[i - 1].timestamp) / 1000.0
+            if (seconds <= 0.0 || seconds > 60.0) continue
+            val from = LatLon(points[i - 1].lat, points[i - 1].lon)
+            val to = LatLon(points[i].lat, points[i].lon)
+            val speed = distanceMeters(from, to) / seconds
+            if (speed.isFinite() && speed > maximum) maximum = speed
+        }
+        return maximum
+    }
+
+    /** Sums uphill/downhill changes, ignoring sub-metre elevation noise. */
+    internal fun elevationGains(points: List<TrackPoint>): Pair<Double, Double> {
+        var last: Double? = null
+        var ascent = 0.0
+        var descent = 0.0
+        points.forEach { point ->
+            val elevation = point.elevation
+            if (elevation != null && elevation.isFinite()) {
+                val previous = last
+                if (previous == null) {
+                    last = elevation
+                } else {
+                    val delta = elevation - previous
+                    if (delta >= 1.0) {
+                        ascent += delta
+                        last = elevation
+                    } else if (delta <= -1.0) {
+                        descent += -delta
+                        last = elevation
+                    }
+                }
+            }
+        }
+        return ascent to descent
+    }
 
     private fun parseTime(value: String): Long {
         if (value.isBlank()) return 0L

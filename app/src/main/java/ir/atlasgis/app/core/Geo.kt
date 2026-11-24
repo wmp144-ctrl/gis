@@ -23,7 +23,8 @@ data class BoundingBox(
     val centerLon: Double get() = (west + east) / 2.0
     val center: LatLon get() = LatLon(centerLat, centerLon)
     val isValid: Boolean
-        get() = south <= north && west <= east && south.isFinite() && north.isFinite()
+        get() = south <= north && west <= east &&
+            south.isFinite() && north.isFinite() && west.isFinite() && east.isFinite()
 
     fun contains(point: LatLon): Boolean =
         point.lat in south..north && point.lon in west..east

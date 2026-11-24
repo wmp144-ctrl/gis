@@ -249,12 +249,20 @@ class PlaceIndexer(private val db: AppDatabase) {
          * contain the word the user typed.
          */
         fun kindValuesFor(query: String): List<String> {
-            val needle = query.trim()
+            val needle = normalize(query)
             if (needle.length < 2) return emptyList()
-            val keys = PoiClassifier.labels
+            val labelMatches = PoiClassifier.labels
                 .filterKeys { it != PoiClassifier.GENERIC }
-                .filterValues { it.contains(needle, ignoreCase = true) }
-                .keys
+                .mapValues { (_, label) -> normalize(label) }
+            // Exact labels win: «پارک» must not also expand to «پارکینگ». If there is
+            // no exact label, a prefix match handles «پمپ» → «پمپ بنزین».
+            val exact = labelMatches.filterValues { it == needle }.keys
+            val keys = if (exact.isNotEmpty()) {
+                exact
+            } else {
+                val prefix = labelMatches.filterValues { it.startsWith(needle) }.keys
+                if (prefix.isNotEmpty()) prefix else labelMatches.filterValues { it.contains(needle) }.keys
+            }
             if (keys.isEmpty()) return emptyList()
             return PoiClassifier.tags.entries
                 .asSequence()
@@ -282,6 +290,14 @@ class PlaceIndexer(private val db: AppDatabase) {
             .replace('\u0649', '\u06CC')
             .replace('\u0643', '\u06A9')
             .replace('\u0629', '\u0647')
+            // Persian users type آ/ا and أ/إ interchangeably; folding the alef
+            // variants makes «اب» find «آب» and «مسجد جامع» find «مسجد جامع».
+            .replace('\u0622', '\u0627')
+            .replace('\u0623', '\u0627')
+            .replace('\u0625', '\u0627')
+            .replace('\u0671', '\u0627')
+            .replace('\u0624', '\u0648')
+            .replace('\u0626', '\u06CC')
             .replace('\u200C', ' ')
             .replace('\u200D', ' ')
             .replace(Regex("[\\u064B-\\u065F\\u0670\\u06D6-\\u06ED]"), "")

@@ -1,5 +1,6 @@
 package ir.atlasgis.app
 
+import ir.atlasgis.app.core.BoundingBox
 import ir.atlasgis.app.core.CoordinateFormat
 import ir.atlasgis.app.core.LatLon
 import ir.atlasgis.app.core.boundingBoxOf
@@ -12,6 +13,7 @@ import ir.atlasgis.app.core.pathLengthMeters
 import ir.atlasgis.app.core.polygonAreaSqMeters
 import ir.atlasgis.app.core.toUtm
 import ir.atlasgis.app.core.utmZoneNumber
+import ir.atlasgis.app.ui.screens.formatBytes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -82,5 +84,28 @@ class GeoMathTest {
         assertTrue(formatArea(2_500_000.0).contains("km²"))
         assertTrue(formatCoordinate(tehran.lat, tehran.lon, CoordinateFormat.DMS).contains("°"))
         assertTrue(formatCoordinate(tehran.lat, tehran.lon, CoordinateFormat.UTM).contains("39"))
+    }
+
+    @Test
+    fun dmsSecondsCarryIntoMinutesInsteadOfPrintingSixty() {
+        // 12.9999999° is 12°59′59.99964″, which rounds to 13°00′00.0″.
+        val text = formatCoordinate(12.9999999, 0.0, CoordinateFormat.DMS)
+        assertTrue(text, text.contains("۱۳°۰۰′۰٫۰″N"))
+        assertTrue(text, !text.contains("۶۰′"))
+        assertTrue(text, !text.contains("۶۰٫۰″"))
+    }
+
+    @Test
+    fun boundingBoxRejectsNonFiniteEdges() {
+        assertTrue(BoundingBox(0.0, 0.0, 1.0, 1.0).isValid)
+        assertTrue(!BoundingBox(0.0, Double.NaN, 1.0, 1.0).isValid)
+        assertTrue(!BoundingBox(0.0, 0.0, 1.0, Double.POSITIVE_INFINITY).isValid)
+    }
+
+    @Test
+    fun byteSizesUsePersianDecimalSeparator() {
+        assertEquals("۱٫۵ مگابایت", formatBytes((1.5 * 1024 * 1024).toLong()))
+        assertEquals("۵۰۰ بایت", formatBytes(500))
+        assertEquals("۰ بایت", formatBytes(0))
     }
 }

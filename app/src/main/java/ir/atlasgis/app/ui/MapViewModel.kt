@@ -46,6 +46,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.max
 
+private const val MAX_GEO_IMPORT_BYTES = 32 * 1024 * 1024
+
 enum class Tool { BROWSE, MEASURE }
 
 enum class Sheet { NONE, TOOLS, LAYERS, WAYPOINTS, TRACKS, SETTINGS, SEARCH }
@@ -57,6 +59,8 @@ data class SearchHit(
     val label: String,
     val position: LatLon,
     val waypointId: String? = null,
+    /** Archive a map place came from; null for a saved waypoint. */
+    val layerId: String? = null,
 ) {
     val fromWaypoint: Boolean get() = waypointId != null
 }
@@ -166,6 +170,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     val settings: StateFlow<AppSettings> = settingsStore.settings
 
+    @Volatile
     private var activeSession: TrackSession? = null
     private var tickerJob: Job? = null
     private var lastPersistedAt = 0L
@@ -190,15 +195,25 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         controller.onStyleReady = { pushOverlays() }
         controller.onTap = { point -> handleMapTap(point) }
         controller.onLongPress = { point ->
-            if (!_measure.value.active) _pendingWaypoint.value = point
+            if (!_measure.value.active) {
+                _searchFocus.value = null
+                _pendingWaypoint.value = point
+                pushOverlays()
+            }
         }
         controller.onCameraIdle = { info ->
             settingsStore.saveCamera(
                 info.center.lat, info.center.lon, info.zoom, info.bearing.toDouble(),
             )
         }
+        controller.onUserGesture = {
+            // Panning while following used to be undone by the next GPS fix.
+            if (_followMode.value) {
+                _followMode.value = false
+                _messages.tryEmit("حالت تعقیب خاموش شد؛ برای روشن‌شدن دوباره، دکمهٔ موقعیت را بزنید")
+            }
+        }
 
-        viewModelScope.launch(Dispatchers.IO) { db.closeDanglingRecordings() }
         loadAll()
         observeGps()
     }
@@ -207,6 +222,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadAll() {
         viewModelScope.launch {
+            // Finish recordings left behind by a killed process before the list is
+            // read, otherwise the first frame can show a track that is not recording.
+            withContext(Dispatchers.IO) { db.closeDanglingRecordings() }
             val loadedLayers = withContext(Dispatchers.IO) { library.layers() }
             _layers.value = loadedLayers
             _waypoints.value = withContext(Dispatchers.IO) { db.readWaypoints() }
@@ -273,6 +291,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeSearch() {
+        searchJob?.cancel()
         _searchQuery.value = ""
         _searchHits.value = emptyList()
         _sheet.value = Sheet.NONE
@@ -287,21 +306,36 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         ensureNearbyPlaces()
+        val normalizedNeedle = PlaceIndexer.normalize(needle)
+        if (normalizedNeedle.isEmpty()) {
+            _searchHits.value = emptyList()
+            return
+        }
         searchJob = viewModelScope.launch {
             delay(140)
             val waypointHits = _waypoints.value
-                .filter { it.name.contains(needle, ignoreCase = true) || it.note.contains(needle, ignoreCase = true) }
+                .filter {
+                    PlaceIndexer.normalize(it.name).contains(normalizedNeedle) ||
+                        PlaceIndexer.normalize(it.note).contains(normalizedNeedle)
+                }
                 .take(12)
                 .map { waypoint ->
                     SearchHit(
                         name = waypoint.name,
                         kind = waypoint.category,
-                        label = PoiClassifier.labelFor(waypoint.category),
+                        label = _categoryStyles.value.firstOrNull { it.key == waypoint.category }?.label
+                            ?: PoiClassifier.labelFor(waypoint.category),
                         position = waypoint.position,
                         waypointId = waypoint.id,
                     )
                 }
+            // A hidden archive is not drawn, so it must not answer a map search.
+            val visibleLayerIds = _layers.value
+                .filter { it.visible && it.format == TileFormat.VECTOR }
+                .map { it.id }
+                .toSet()
             val placeHits = withContext(Dispatchers.IO) { db.searchPlaces(needle, 40) }
+                .filter { it.layerId in visibleLayerIds }
                 .map { place -> place.toHit() }
             _searchHits.value = waypointHits + placeHits
         }
@@ -356,7 +390,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectSearchHit(hit: SearchHit) {
         _sheet.value = Sheet.NONE
-        _searchFocus.value = hit
+        // A saved waypoint has its own richer card (edit/delete), so showing the
+        // search-focus card as well used to stack two cards for the same point.
+        _searchFocus.value = if (hit.waypointId == null) hit else null
         _selectedWaypointId.value = hit.waypointId
         _chromeVisible.value = true
         controller.flyTo(hit.position, max(controller.zoom(), 16.0))
@@ -374,6 +410,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         kind = klass,
         label = PoiClassifier.labelFor(klass),
         position = position,
+        layerId = layerId,
     )
 
     // -------------------------------------------------------------------- layers
@@ -523,7 +560,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     // ----------------------------------------------------------------- waypoints
 
     fun requestWaypointAt(point: LatLon) {
+        _searchFocus.value = null
         _pendingWaypoint.value = point
+        pushOverlays()
     }
 
     fun cancelPendingWaypoint() {
@@ -625,6 +664,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun showWaypointOnMap(waypoint: Waypoint) {
         _sheet.value = Sheet.NONE
+        _searchFocus.value = null
         _selectedWaypointId.value = waypoint.id
         controller.flyTo(waypoint.position, max(controller.zoom(), 15.0))
         pushOverlays()
@@ -634,6 +674,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startMeasure(mode: MeasureMode) {
         _selectedWaypointId.value = null
+        _searchFocus.value = null
+        _recordArmed.value = false
         _tool.value = Tool.MEASURE
         _measure.value = MeasureUiState(active = true, mode = mode, points = emptyList())
         pushOverlays()
@@ -716,6 +758,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun showTrack(track: Track) {
         val box = boundingBoxOf(track.points.map { LatLon(it.lat, it.lon) })
         _sheet.value = Sheet.NONE
+        _searchFocus.value = null
+        _selectedWaypointId.value = null
+        pushOverlays()
         if (box != null) controller.fitBounds(box, 96)
     }
 
@@ -737,6 +782,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun setKeepScreenOn(enabled: Boolean) = settingsStore.setKeepScreenOn(enabled)
 
     fun setShowScaleBar(enabled: Boolean) = settingsStore.setShowScaleBar(enabled)
+
+    fun setShowCoordinates(enabled: Boolean) = settingsStore.setShowCoordinates(enabled)
 
     fun setShowTracks(enabled: Boolean) {
         _showTracks.value = enabled
@@ -761,6 +808,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
         _measure.value = MeasureUiState()
         _selectedWaypointId.value = null
+        _searchFocus.value = null
         _recordArmed.value = true
         pushOverlays()
     }
@@ -793,6 +841,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _recording.value = session.snapshot()
         _tool.value = Tool.BROWSE
         _measure.value = MeasureUiState()
+        _searchFocus.value = null
         lastPersistedAt = System.currentTimeMillis()
         lastLivePushAt = 0L
         locationProvider.start()
@@ -830,6 +879,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _recording.value = RecordingState()
             _liveTrackPoints.value = emptyList()
             pushOverlays()
+            // A 15-second autosave may already have written this session. Remove it
+            // instead of leaving a stalled one-point "recording" row in the database.
+            viewModelScope.launch(Dispatchers.IO) { db.deleteTrack(session.id) }
             _messages.tryEmit("برای ذخیره مسیر، حداقل دو نقطه لازم است")
             return
         }
@@ -866,7 +918,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private fun persistSession() {
         val session = activeSession ?: return
         val track = session.toTrack(recording = true)
-        viewModelScope.launch(Dispatchers.IO) { db.upsertTrack(track) }
+        viewModelScope.launch(Dispatchers.IO) {
+            // Stop may have finalised (or discarded) the session while this write was
+            // queued; never overwrite the final row with a stale recording snapshot.
+            if (activeSession === session) db.upsertTrack(track)
+        }
     }
 
     // ------------------------------------------------------------------------ gps
@@ -950,7 +1006,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             runCatching {
                 val single = trackId?.let { id -> _tracks.value.firstOrNull { it.id == id } }
-                val content = if (single != null) exportTrackContent(single, kind.gpx) else exportContent(kind)
+                // Serialising a long track must not block the UI thread.
+                val content = withContext(Dispatchers.IO) {
+                    if (single != null) exportTrackContent(single, kind.gpx) else exportContent(kind)
+                }
                 withContext(Dispatchers.IO) {
                     val stream = getApplication<Application>().contentResolver
                         .openOutputStream(uri) ?: error("نوشتن فایل ممکن نشد")
@@ -965,11 +1024,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _importing.value = ImportUiState("در حال خواندن فایل…", 0f, true)
             runCatching {
-                val text = withContext(Dispatchers.IO) {
-                    val stream = getApplication<Application>().contentResolver
-                        .openInputStream(uri) ?: error("خواندن فایل ممکن نشد")
-                    stream.bufferedReader().use { it.readText() }
-                }
+                val text = withContext(Dispatchers.IO) { readTextLimited(uri) }
                 val result = withContext(Dispatchers.Default) { GeoFileCodec.parse(text) }
                 if (result.waypoints.isEmpty() && result.tracks.isEmpty()) {
                     error("هیچ نقطه یا مسیری در فایل پیدا نشد")
@@ -992,6 +1047,27 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Reads a GPX/GeoJSON file, refusing an oversized file before it can exhaust memory. */
+    private fun readTextLimited(uri: Uri): String {
+        val resolver = getApplication<Application>().contentResolver
+        val input = resolver.openInputStream(uri) ?: error("خواندن فایل ممکن نشد")
+        val output = java.io.ByteArrayOutputStream()
+        input.use { stream ->
+            val buffer = ByteArray(64 * 1024)
+            var total = 0
+            while (true) {
+                val read = stream.read(buffer)
+                if (read <= 0) break
+                total += read
+                if (total > MAX_GEO_IMPORT_BYTES) {
+                    error("فایل ورودی بیش از حد بزرگ است (حداکثر ۳۲ مگابایت)")
+                }
+                output.write(buffer, 0, read)
+            }
+        }
+        return output.toByteArray().toString(Charsets.UTF_8)
+    }
+
     // -------------------------------------------------------------------- go to
 
     fun goToCoordinate(input: String): Boolean {
@@ -1000,6 +1076,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _messages.tryEmit("مختصات معتبر نیست؛ نمونه: 35.6892, 51.3890")
             return false
         }
+        _searchFocus.value = null
+        pushOverlays()
         controller.flyTo(parsed, max(controller.zoom(), 14.0))
         return true
     }

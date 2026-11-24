@@ -30,8 +30,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import ir.atlasgis.app.core.CoordinateFormat
 import ir.atlasgis.app.core.formatArea
 import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.core.formatDistance
@@ -546,10 +548,58 @@ fun SegmentedChip(
     }
 }
 
+/**
+ * Read-only centre coordinate, formatted with the user's chosen coordinate style.
+ * Tapping copies the full value; it is the visible half of the coordinate-format
+ * setting, which previously only existed in the settings sheet.
+ */
+@Composable
+fun MapCoordinateReadout(
+    lat: Double,
+    lon: Double,
+    format: CoordinateFormat,
+    onCopy: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val text = remember(lat, lon, format) { formatCoordinate(lat, lon, format) }
+    GlassPanel(modifier = modifier, shape = RoundedCornerShape(10.dp)) {
+        Row(
+            modifier = Modifier
+                .widthIn(max = 228.dp)
+                .clickable { onCopy(text) }
+                .padding(start = 8.dp, end = 6.dp, top = 3.dp, bottom = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Rounded.PinDrop,
+                contentDescription = null,
+                tint = AtlasColors.Accent,
+                modifier = Modifier.size(12.dp),
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Ltr),
+                color = AtlasColors.TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Rounded.ContentCopy,
+                contentDescription = "کپی مختصات",
+                tint = AtlasColors.TextMuted,
+                modifier = Modifier.size(13.dp),
+            )
+        }
+    }
+}
+
 @Composable
 fun MapScaleBar(metersPerPixel: Double, modifier: Modifier = Modifier) {
     val density = LocalDensity.current
-    if (metersPerPixel <= 0.0) return
+    if (!metersPerPixel.isFinite() || metersPerPixel <= 0.0) return
     val targetPx = with(density) { 76.dp.toPx() }.toDouble()
     val distance = niceScaleDistance(metersPerPixel * targetPx)
     val barPx = (distance / metersPerPixel).toFloat()

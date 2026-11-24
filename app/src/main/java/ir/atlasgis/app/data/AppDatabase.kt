@@ -142,6 +142,13 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
                     "ON map_places(layer_id, name_norm, lat, lon)",
             )
         }
+        if (oldVersion < 8) {
+            // Search folding now also unifies آ/أ/إ with ا. Rows indexed by an older
+            // build keep the old spelling, so clear the index and let the next search
+            // rebuild it with the new normalisation.
+            db.execSQL("DELETE FROM map_places")
+            db.execSQL("DELETE FROM map_place_index")
+        }
     }
 
     /** Searchable place index for vector archives; see [PlaceIndexer]. */
@@ -222,8 +229,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         Unit
     }
 
-    /** Removes a category and moves its points to the general category. */
+    /** Removes a custom category and moves its points to the general category. */
     fun deleteCategoryStyle(key: String) = synchronized(writeLock) {
+        // Built-in categories are re-seeded by readCategoryStyles(), so a delete
+        // would silently come back after the next launch. Keep their rows intact.
+        if (WaypointCategoryStyle.isBuiltIn(key)) return@synchronized
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -611,7 +621,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
 
     companion object {
         private const val NAME = "atlasgis.db"
-        private const val VERSION = 7
+        private const val VERSION = 8
 
         fun newId(): String = UUID.randomUUID().toString()
 

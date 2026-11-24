@@ -21,6 +21,21 @@ class PlaceSearchTest {
     }
 
     @Test
+    fun aParkSearchDoesNotTurnIntoParkingOrViceVersa() {
+        val park = PlaceIndexer.kindValuesFor("پارک")
+        assertTrue("park tag expected, got $park", park.contains("park"))
+        assertFalse("parking must not match پارک, got $park", park.contains("parking"))
+
+        val parking = PlaceIndexer.kindValuesFor("پارکینگ")
+        assertTrue("parking tag expected, got $parking", parking.contains("parking"))
+    }
+
+    @Test
+    fun typeSearchAlsoFoldsAlefVariants() {
+        assertTrue(PlaceIndexer.kindValuesFor("اب").contains("water"))
+    }
+
+    @Test
     fun unrelatedAndGenericQueriesDoNotExpandToEverything() {
         assertTrue(PlaceIndexer.kindValuesFor("مکان").isEmpty())
         assertTrue(PlaceIndexer.kindValuesFor("xy").isEmpty())
@@ -38,5 +53,14 @@ class PlaceSearchTest {
         assertEquals("مسجد جامع کریمی", normalized)
         assertFalse(normalized.contains('\u200C'))
         assertFalse(normalized.contains('ك'))
+    }
+
+    @Test
+    fun normalizeFoldsAlefVariantsSoTypedAlefFindsWrittenAlef() {
+        // People commonly type «اب» for a place written «آب».
+        assertEquals(PlaceIndexer.normalize("آب"), PlaceIndexer.normalize("اب"))
+        assertTrue(PlaceIndexer.normalize("آب انبار").contains(PlaceIndexer.normalize("اب")))
+        assertEquals("احمد", PlaceIndexer.normalize("أحمد"))
+        assertEquals("اسماعیل", PlaceIndexer.normalize("إسماعيل"))
     }
 }

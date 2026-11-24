@@ -229,7 +229,7 @@ private fun LayerRow(
                             color = if (layer.format == TileFormat.VECTOR) AtlasColors.Info else AtlasColors.Accent,
                             background = Color.Transparent,
                         )
-                        StatusChip(text = layer.zoomLabel, background = Color.Transparent)
+                        StatusChip(text = layer.zoomLabel.toPersianDigits(), background = Color.Transparent)
                         StatusChip(text = formatBytes(layer.fileSizeBytes), background = Color.Transparent)
                         if (layer.hasCustomStyle) {
                             StatusChip(
@@ -492,13 +492,18 @@ private fun RenameLayerDialog(
 }
 
 fun formatBytes(bytes: Long): String {
-    if (bytes <= 0) return "۰"
+    if (bytes <= 0) return "۰ بایت"
     val kb = bytes / 1024.0
     val mb = kb / 1024.0
     val gb = mb / 1024.0
+    fun number(value: Double, decimals: Int): String =
+        String.format(Locale.US, "%.${decimals}f", value)
+            .toPersianDigits()
+            .replace('.', '٫')
     return when {
-        gb >= 1.0 -> String.format(Locale.US, "%.1f", gb).toPersianDigits() + " گیگابایت"
-        mb >= 1.0 -> String.format(Locale.US, "%.1f", mb).toPersianDigits() + " مگابایت"
-        else -> String.format(Locale.US, "%.0f", kb).toPersianDigits() + " کیلوبایت"
+        bytes < 1024 -> "${bytes.toString().toPersianDigits()} بایت"
+        gb >= 1.0 -> number(gb, 1) + " گیگابایت"
+        mb >= 1.0 -> number(mb, 1) + " مگابایت"
+        else -> number(kb, 0) + " کیلوبایت"
     }
 }

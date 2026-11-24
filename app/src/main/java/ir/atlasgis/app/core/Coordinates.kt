@@ -46,10 +46,19 @@ fun parseCoordinateInput(input: String): LatLon? {
     val lonDirection = directions.firstOrNull { it == 'E' || it == 'W' }
 
     val position = when {
-        tokens.size >= 6 -> LatLon(
-            applyHemisphere(dmsToDecimal(tokens[0], tokens[1], tokens[2]), latDirection),
-            applyHemisphere(dmsToDecimal(tokens[3], tokens[4], tokens[5]), lonDirection),
-        )
+        tokens.size >= 6 -> {
+            // Minutes and seconds must be below 60; accepting 35°99′ silently
+            // moved the pin by more than a degree instead of reporting bad input.
+            val invalidMinuteOrSecond = listOf(tokens[1], tokens[2], tokens[4], tokens[5])
+                .any { it < 0.0 || it >= 60.0 }
+            if (invalidMinuteOrSecond) {
+                return null
+            }
+            LatLon(
+                applyHemisphere(dmsToDecimal(tokens[0], tokens[1], tokens[2]), latDirection),
+                applyHemisphere(dmsToDecimal(tokens[3], tokens[4], tokens[5]), lonDirection),
+            )
+        }
         tokens.size >= 2 -> LatLon(
             applyHemisphere(tokens[0], latDirection),
             applyHemisphere(tokens[1], lonDirection),

@@ -48,6 +48,8 @@ class MapController(@Suppress("unused") private val appContext: Context) {
     var onMapReady: (() -> Unit)? = null
     var onStyleReady: (() -> Unit)? = null
     var onCameraIdle: ((CameraInfo) -> Unit)? = null
+    /** User panned/pinched/rotated the map; follow mode should stop. */
+    var onUserGesture: (() -> Unit)? = null
 
     private var lastCameraEmit = 0L
 
@@ -98,6 +100,11 @@ class MapController(@Suppress("unused") private val appContext: Context) {
             true
         }
         map.addOnCameraMoveListener { emitCamera(false) }
+        map.addOnCameraMoveStartedListener { reason ->
+            if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
+                onUserGesture?.invoke()
+            }
+        }
         map.addOnCameraIdleListener {
             emitCamera(true)
             _camera.value?.let { onCameraIdle?.invoke(it) }

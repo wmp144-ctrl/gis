@@ -3,6 +3,7 @@ package ir.atlasgis.app
 import ir.atlasgis.app.core.LatLon
 import ir.atlasgis.app.data.GeoFileCodec
 import ir.atlasgis.app.data.GpsFix
+import ir.atlasgis.app.data.TrackPoint
 import ir.atlasgis.app.data.Waypoint
 import ir.atlasgis.app.data.WaypointCategory
 import ir.atlasgis.app.domain.TrackSession
@@ -47,10 +48,20 @@ class TrackAndExportTest {
     }
 
     @Test
+    fun implausibleGpsJumpIsRejected() {
+        val session = TrackSession("jump", "t", clock) { clock }
+        assertTrue(session.addFix(fix(35.0, 51.0)))
+        // 111 km in one second cannot be a real fix; it must not enter the track.
+        assertFalse(session.addFix(fix(36.0, 51.0, seconds = 1)))
+        assertEquals(1, session.pointCount)
+        assertEquals(0.0, session.distanceMeters, 1e-9)
+    }
+
+    @Test
     fun pauseFreezesDistanceAndDuration() {
         val session = TrackSession("id2", "t", clock) { clock }
         session.addFix(fix(35.0, 51.0))
-        session.addFix(fix(35.001, 51.0))
+        session.addFix(fix(35.001, 51.0, seconds = 3))
         val distanceBeforePause = session.distanceMeters
         clock += 30_000
         val elapsedBeforePause = session.elapsedSeconds()
@@ -93,7 +104,7 @@ class TrackAndExportTest {
         val waypoint = Waypoint("w", "چشمه & آب", "یادداشت", WaypointCategory.WATER.key, 35.7, 51.4, 1300.0, now, now)
         val session = TrackSession("t", "t", now - 60_000) { now }
         session.addFix(fix(35.0, 51.0))
-        session.addFix(fix(35.001, 51.0))
+        session.addFix(fix(35.001, 51.0, seconds = 3))
         val gpx = GeoFileCodec.toGpx(listOf(waypoint), listOf(session.toTrack(false)))
 
         assertTrue(gpx.startsWith("<?xml"))
@@ -105,14 +116,93 @@ class TrackAndExportTest {
     }
 
     @Test
+    fun elevationGainsIgnoreNoiseAndAccumulateBothWays() {
+        val points = listOf(
+            TrackPoint(35.0, 51.0, 100.0),
+            TrackPoint(35.001, 51.0, 100.4),
+            TrackPoint(35.002, 51.0, 120.0),
+            TrackPoint(35.003, 51.0, 90.0),
+        )
+        val gains = GeoFileCodec.elevationGains(points)
+        assertEquals(20.0, gains.first, 1e-9)
+        assertEquals(30.0, gains.second, 1e-9)
+    }
+
+    @Test
+    fun categoryKeysSurviveGeoJsonRoundTrip() {
+        val now = 1_700_000_000_000L
+        val waypoint = Waypoint(
+            "w", "نقطهٔ سفارشی", "", "custom-test", 35.7, 51.4, null, now, now,
+        )
+        val fromGeoJson = GeoFileCodec.parse(GeoFileCodec.waypointsToGeoJson(listOf(waypoint)))
+        assertEquals("custom-test", fromGeoJson.waypoints.single().category)
+    }
+
+    @Test
     fun geoJsonExportIsParsable() {
         val now = 1_700_000_000_000L
-        val waypoint = Waypoint("w", "n", "", WaypointCategory.GENERAL.key, 35.7, 51.4, null, now, now)
+        val waypoint = Waypoint("w", "n", "", WaypointCategory.GENERAL.key, 35.7, 51.4, 1300.0, now, now)
         val exported = GeoFileCodec.waypointsToGeoJson(listOf(waypoint))
         val reparsed = GeoFileCodec.parse(exported)
         assertEquals(1, reparsed.waypoints.size)
         assertEquals(51.4, reparsed.waypoints[0].lon, 1e-9)
+        assertEquals(1300.0, reparsed.waypoints[0].elevation!!, 1e-9)
         assertTrue(GeoFileCodec.parse("not a map file").waypoints.isEmpty())
         assertTrue(LatLon(0.0, 0.0).isValid())
+    }
+
+    @Test
+    fun invalidCoordinatesAreNotImported() {
+        val geoJson = """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","properties":{"name":"bad point"},
+               "geometry":{"type":"Point","coordinates":[200,95]}},
+              {"type":"Feature","properties":{"name":"bad line"},
+               "geometry":{"type":"LineString","coordinates":[[181,95],[51.4,35.7]]}}
+            ]}
+        """.trimIndent()
+        val result = GeoFileCodec.parse(geoJson)
+        assertTrue(result.waypoints.isEmpty())
+        assertTrue(result.tracks.isEmpty())
+    }
+
+    @Test
+    fun multiPointAndMultiPolygonAreImported() {
+        val geoJson = """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","properties":{"name":"two points"},
+               "geometry":{"type":"MultiPoint","coordinates":[[51.4,35.7],[51.5,35.8]]}},
+              {"type":"Feature","properties":{"name":"two areas"},
+               "geometry":{"type":"MultiPolygon","coordinates":[
+                 [[[51.4,35.7],[51.41,35.7],[51.41,35.71],[51.4,35.7]]],
+                 [[[51.5,35.8],[51.51,35.8],[51.51,35.81],[51.5,35.8]]]
+               ]}}
+            ]}
+        """.trimIndent()
+        val result = GeoFileCodec.parse(geoJson)
+        assertEquals(2, result.waypoints.size)
+        assertEquals(2, result.tracks.size)
+        assertTrue(result.tracks.all { it.points.size >= 3 })
+    }
+
+    @Test
+    fun geometryCollectionsAreImported() {
+        val geoJson = """
+            {"type":"Feature","properties":{"name":"mixed"},
+             "geometry":{"type":"GeometryCollection","geometries":[
+               {"type":"Point","coordinates":[51.4,35.7]},
+               {"type":"LineString","coordinates":[[51.4,35.7],[51.41,35.71]]}
+             ]}}
+        """.trimIndent()
+        val result = GeoFileCodec.parse(geoJson)
+        assertEquals(1, result.waypoints.size)
+        assertEquals(1, result.tracks.size)
+    }
+
+    @Test
+    fun malformedJsonIsReportedAsAPersianInputError() {
+        val error = runCatching { GeoFileCodec.parse("{\"type\":") }.exceptionOrNull()
+        assertTrue(error is IllegalArgumentException)
+        assertTrue(error?.message.orEmpty().contains("معتبر نیست"))
     }
 }

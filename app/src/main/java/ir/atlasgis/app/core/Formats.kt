@@ -105,20 +105,29 @@ private fun formatDecimal(lat: Double, lon: Double): String {
 private fun formatDms(value: Double, isLat: Boolean): String {
     val absolute = abs(value)
     var degrees = floor(absolute).toInt()
-    val minutesFull = (absolute - degrees) * 60.0
-    var minutes = floor(minutesFull).toInt()
-    val seconds = ((minutesFull - minutes) * 60.0 * 10).roundToLong() / 10.0
+    // Round to one decimal second first, then carry 60.0″ into a minute and 60′ into
+    // a degree. Adjusting minutes/degrees while leaving the rounded seconds at 60
+    // used to print impossible values such as 13°60′0.0″ near a whole degree.
+    val totalSeconds = (((absolute - degrees) * 3600.0) * 10).roundToLong() / 10.0
+    var minutes = (totalSeconds / 60.0).toInt()
+    var seconds = totalSeconds - minutes * 60.0
+    if (minutes >= 60) {
+        degrees += minutes / 60
+        minutes %= 60
+    }
     if (seconds >= 60.0) {
         minutes += 1
+        seconds = 0.0
     }
     if (minutes >= 60) {
         degrees += 1
+        minutes = 0
     }
     val hemisphere = when {
         isLat -> if (value >= 0) "N" else "S"
         else -> if (value >= 0) "E" else "W"
     }
-    val secondsText = String.format(Locale.US, "%.1f", if (seconds >= 60.0) 0.0 else seconds)
+    val secondsText = String.format(Locale.US, "%.1f", seconds)
         .toPersianDigits().replace('.', '٫')
     return "${degrees.toString().toPersianDigits()}°${minutes.toString().padStart(2, '0').toPersianDigits()}′$secondsText″$hemisphere"
 }

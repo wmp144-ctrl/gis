@@ -77,14 +77,15 @@ class TrackSession(
                 // Still update elevation drift-free statistics only when position is accepted.
                 return false
             }
-            distance += stepDistance
             if (elapsed in 1..60_000) {
                 val speed = stepDistance / (elapsed / 1000.0)
-                if (speed.isFinite() && speed < 60.0) {
-                    currentSpeed = speed
-                    if (speed > maxSpeed) maxSpeed = speed
-                }
+                // A GPS outlier can jump kilometres in a second. Rejecting it keeps
+                // both the drawn line and the saved distance honest.
+                if (!speed.isFinite() || speed > MAX_PLAUSIBLE_SPEED_MPS) return false
+                currentSpeed = speed
+                if (speed > maxSpeed) maxSpeed = speed
             }
+            distance += stepDistance
             lastMovementAt = now()
         } else {
             currentSpeed = fix.speedMps?.toDouble()?.takeIf { it.isFinite() && it >= 0f } ?: 0.0
@@ -152,6 +153,9 @@ class TrackSession(
         if (points.size >= 2) points.map { LatLon(it.lat, it.lon) } else emptyList()
 
     companion object {
+        /** ~252 km/h: generous for a phone, impossible for a GPS jump. */
+        private const val MAX_PLAUSIBLE_SPEED_MPS = 70.0
+
         fun newName(): String {
             val stamp = java.text.SimpleDateFormat("yyyy/MM/dd HH:mm", java.util.Locale.US)
                 .format(java.util.Date())
