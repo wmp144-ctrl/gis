@@ -1,11 +1,13 @@
 package ir.atlasgis.app
 
 import ir.atlasgis.app.core.BoundingBox
+import ir.atlasgis.app.core.CoordinateFormat
 import ir.atlasgis.app.core.LatLon
 import ir.atlasgis.app.core.analyzeTrack
 import ir.atlasgis.app.core.estimateSpeedMps
 import ir.atlasgis.app.core.locateOnRoute
 import ir.atlasgis.app.data.BackupCodec
+import ir.atlasgis.app.data.AppSettings
 import ir.atlasgis.app.data.TileGrid
 import ir.atlasgis.app.data.Track
 import ir.atlasgis.app.data.TrackPoint
@@ -177,6 +179,12 @@ class NewFeatureLogicTest {
             ),
             tracks = listOf(track),
             categories = WaypointCategoryStyle.defaults(),
+            settings = AppSettings(
+                coordinateFormat = CoordinateFormat.UTM,
+                keepScreenOn = false,
+                showScaleBar = false,
+                showCoordinates = false,
+            ),
         )
 
         val decoded = BackupCodec.decode(BackupCodec.encode(snapshot))
@@ -190,5 +198,38 @@ class NewFeatureLogicTest {
         assertEquals(100L, decoded.tracks.first().movingSeconds)
         assertEquals(snapshot.categories.size, decoded.categories.size)
         assertTrue(BackupCodec.summary(decoded).contains("نقطه"))
+        assertEquals(snapshot.settings, decoded.settings)
+        assertEquals(CoordinateFormat.UTM, decoded.settings!!.coordinateFormat)
+        assertTrue(BackupCodec.summary(decoded).contains("تنظیمات"))
+    }
+
+    @Test
+    fun backupWithoutSettingsStillDecodesAndFallsBackToDefaults() {
+        val legacy = """
+            {
+              "format": "atlasgis-backup",
+              "version": 1,
+              "waypoints": [],
+              "tracks": [],
+              "categories": []
+            }
+        """.trimIndent()
+        assertNull(BackupCodec.decode(legacy).settings)
+
+        val withUnknownFormat = """
+            {
+              "format": "atlasgis-backup",
+              "version": 2,
+              "settings": { "coordinateFormat": "MARS", "keepScreenOn": false },
+              "waypoints": [],
+              "tracks": [],
+              "categories": []
+            }
+        """.trimIndent()
+        val settings = BackupCodec.decode(withUnknownFormat).settings!!
+        assertEquals(CoordinateFormat.DECIMAL, settings.coordinateFormat)
+        assertEquals(false, settings.keepScreenOn)
+        assertTrue(settings.showScaleBar)
+        assertTrue(settings.showCoordinates)
     }
 }

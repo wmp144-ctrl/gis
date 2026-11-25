@@ -54,6 +54,17 @@ class SettingsStore(context: Context) {
         _settings.value = _settings.value.copy(showScaleBar = enabled)
     }
 
+    /** Applies settings from a restored backup and persists them immediately. */
+    fun applyBackup(restored: AppSettings) {
+        prefs.edit()
+            .putString(KEY_COORD, restored.coordinateFormat.name)
+            .putBoolean(KEY_KEEP_AWAKE, restored.keepScreenOn)
+            .putBoolean(KEY_SCALE, restored.showScaleBar)
+            .putBoolean(KEY_COORDINATES, restored.showCoordinates)
+            .apply()
+        _settings.value = restored
+    }
+
     fun setShowCoordinates(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_COORDINATES, enabled).apply()
         _settings.value = _settings.value.copy(showCoordinates = enabled)

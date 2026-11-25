@@ -1,26 +1,29 @@
 package ir.atlasgis.app.data
 
+import ir.atlasgis.app.core.CoordinateFormat
 import ir.atlasgis.app.core.formatDistance
 import ir.atlasgis.app.core.formatSpeed
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Backup of everything the user created: waypoints, tracks, categories. Map
- * archives are intentionally left out — an MBTiles file can be several gigabytes and
- * is re-importable, while these rows are irreplaceable.
+ * Backup of everything the user created: waypoints, tracks, categories and the app
+ * settings. Map archives are intentionally left out — an MBTiles file can be several
+ * gigabytes and is re-importable, while these rows are irreplaceable.
  *
  * The format is plain JSON so a backup can be opened, inspected or edited on a PC.
  */
 object BackupCodec {
 
     const val FORMAT = "atlasgis-backup"
-    const val VERSION = 1
+    const val VERSION = 2
 
     data class Snapshot(
         val waypoints: List<Waypoint>,
         val tracks: List<Track>,
         val categories: List<WaypointCategoryStyle>,
+        /** App settings; null in backups written before version 2. */
+        val settings: AppSettings? = null,
         val exportedAt: Long = System.currentTimeMillis(),
     )
 
@@ -74,6 +77,17 @@ object BackupCodec {
                     .put("color", style.color)
                     .put("icon", style.icon)
                     .put("visible", style.visible),
+            )
+        }
+
+        snapshot.settings?.let { settings ->
+            root.put(
+                "settings",
+                JSONObject()
+                    .put("coordinateFormat", settings.coordinateFormat.name)
+                    .put("keepScreenOn", settings.keepScreenOn)
+                    .put("showScaleBar", settings.showScaleBar)
+                    .put("showCoordinates", settings.showCoordinates),
             )
         }
 
@@ -157,7 +171,22 @@ object BackupCodec {
             waypoints = waypoints,
             tracks = tracks,
             categories = categories,
+            settings = root.optJSONObject("settings")?.let(::decodeSettings),
             exportedAt = root.optLong("exportedAt", 0),
+        )
+    }
+
+    /** Unknown or missing values fall back to the app defaults instead of failing. */
+    private fun decodeSettings(item: JSONObject): AppSettings {
+        val defaults = AppSettings()
+        val format = runCatching {
+            CoordinateFormat.valueOf(item.optString("coordinateFormat", defaults.coordinateFormat.name))
+        }.getOrDefault(defaults.coordinateFormat)
+        return AppSettings(
+            coordinateFormat = format,
+            keepScreenOn = item.optBoolean("keepScreenOn", defaults.keepScreenOn),
+            showScaleBar = item.optBoolean("showScaleBar", defaults.showScaleBar),
+            showCoordinates = item.optBoolean("showCoordinates", defaults.showCoordinates),
         )
     }
 
@@ -165,6 +194,7 @@ object BackupCodec {
     fun summary(snapshot: Snapshot): String = buildString {
         append("${snapshot.waypoints.size} نقطه و ${snapshot.tracks.size} مسیر")
         if (snapshot.categories.isNotEmpty()) append(" و ${snapshot.categories.size} دسته‌بندی")
+        if (snapshot.settings != null) append(" و تنظیمات برنامه")
         snapshot.tracks.firstOrNull()?.let { track ->
             append(" · مسیر «${track.name}» ${formatDistance(track.distanceMeters)}")
             if (track.maxSpeedMps > 0) append(" · بیشینه ${formatSpeed(track.maxSpeedMps)}")

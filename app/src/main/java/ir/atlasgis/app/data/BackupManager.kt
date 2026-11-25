@@ -57,12 +57,16 @@ class BackupManager(private val context: Context) {
         return "atlasgis-backup-$stamp.json"
     }
 
-    /** Current state of this device, ready to be written to a file. */
-    suspend fun snapshot(): BackupCodec.Snapshot = withContext(Dispatchers.IO) {
+    /**
+     * Current state of this device, ready to be written to a file. Settings are passed
+     * in from the caller's [SettingsStore] so the same instance keeps observing them.
+     */
+    suspend fun snapshot(settings: AppSettings?): BackupCodec.Snapshot = withContext(Dispatchers.IO) {
         BackupCodec.Snapshot(
             waypoints = db.readWaypoints(),
             tracks = db.readTracks().filter { !it.isRecording },
             categories = db.readCategoryStyles(),
+            settings = settings,
             exportedAt = System.currentTimeMillis(),
         )
     }

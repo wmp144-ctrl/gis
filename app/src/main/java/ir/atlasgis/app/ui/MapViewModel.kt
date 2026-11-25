@@ -1003,11 +1003,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _importing.value = ImportUiState("در حال ساخت پشتیبان…", 0f, true)
             runCatching {
-                val snapshot = backupManager.snapshot()
+                val snapshot = backupManager.snapshot(settingsStore.settings.value)
                 withContext(Dispatchers.IO) { backupManager.writeBackup(uri, snapshot) }
                 _importing.value = null
                 _messages.tryEmit(
-                    "پشتیبان ذخیره شد: ${snapshot.waypoints.size} نقطه و ${snapshot.tracks.size} مسیر",
+                    "پشتیبان ذخیره شد: ${snapshot.waypoints.size} نقطه، ${snapshot.tracks.size} مسیر و تنظیمات برنامه",
                 )
             }.onFailure { error ->
                 _importing.value = null
@@ -1023,8 +1023,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val snapshot = withContext(Dispatchers.IO) { backupManager.readBackup(uri) }
                 _importing.value = null
-                if (snapshot.waypoints.isEmpty() && snapshot.tracks.isEmpty()) {
-                    error("هیچ نقطه یا مسیری در این پشتیبان نیست")
+                if (snapshot.waypoints.isEmpty() && snapshot.tracks.isEmpty() && snapshot.settings == null) {
+                    error("هیچ نقطه، مسیر یا تنظیمی در این پشتیبان نیست")
                 }
                 restoreSnapshot = snapshot
                 _restorePreview.value = RestorePreview(snapshot, BackupCodec.summary(snapshot))
@@ -1042,12 +1042,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { backupManager.apply(snapshot) }
+                snapshot.settings?.let(settingsStore::applyBackup)
                 _waypoints.value = withContext(Dispatchers.IO) { db.readWaypoints() }
                 _tracks.value = withContext(Dispatchers.IO) { db.readTracks() }
                 _categoryStyles.value = withContext(Dispatchers.IO) { db.readCategoryStyles() }
                 pushOverlays()
                 _messages.tryEmit(
-                    "بازگردانی شد: ${snapshot.waypoints.size} نقطه و ${snapshot.tracks.size} مسیر",
+                    "بازگردانی شد: ${snapshot.waypoints.size} نقطه، ${snapshot.tracks.size} مسیر" +
+                        if (snapshot.settings != null) " و تنظیمات برنامه" else "",
                 )
             }.onFailure { error ->
                 _messages.tryEmit(error.message ?: "بازگردانی پشتیبان ناموفق بود")
