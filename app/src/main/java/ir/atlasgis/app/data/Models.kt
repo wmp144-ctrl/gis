@@ -94,6 +94,8 @@ data class Track(
     val maxSpeedMps: Double,
     val color: String,
     val isRecording: Boolean,
+    /** Time actually moving (pauses excluded); 0 for rows written by older builds. */
+    val movingSeconds: Long = 0L,
 )
 
 /** Snapshot of a recording session, used for the live HUD. */

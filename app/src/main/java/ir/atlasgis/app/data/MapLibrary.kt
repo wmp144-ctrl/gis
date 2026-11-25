@@ -75,35 +75,15 @@ class MapLibrary(private val context: Context) {
             }
             if (temp.length() == 0L) throw IOException("فایل انتخاب‌شده خالی است")
 
-            val info = MbtilesReader.read(temp)
+            // Validate before publishing the file under its final name.
+            MbtilesReader.read(temp)
 
             if (!temp.renameTo(target)) {
                 temp.copyTo(target, overwrite = true)
                 temp.delete()
             }
-
-            val existing = db.readLayers()
-            val layer = MapLayer(
-                id = id,
-                name = (info.name ?: displayName.substringBeforeLast('.')).trim()
-                    .ifBlank { "نقشه بدون نام" },
-                filePath = target.absolutePath,
-                format = info.format,
-                minZoom = info.minZoom,
-                maxZoom = info.maxZoom,
-                bounds = info.bounds,
-                tileSize = info.tileSize,
-                visible = true,
-                opacity = 1f,
-                sortOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1,
-                attribution = info.attribution,
-                vectorLayers = info.vectorLayers,
-                fileSizeBytes = target.length(),
-                addedAt = System.currentTimeMillis(),
-            )
-            db.upsertLayer(layer)
             onProgress(1f)
-            layer
+            adopt(target, displayName.substringBeforeLast('.'), id)
         } catch (error: Throwable) {
             temp.delete()
             target.delete()
@@ -114,6 +94,36 @@ class MapLibrary(private val context: Context) {
             }
         }
     }
+
+    /**
+     * Registers an MBTiles file that already lives in [mapsDirectory]. File imports and
+     * in-app downloads both end here, so a downloaded map behaves exactly like an
+     * imported one (ordering, styling, deletion).
+     */
+    suspend fun adopt(file: File, displayName: String, id: String = AppDatabase.newId()): MapLayer =
+        withContext(Dispatchers.IO) {
+            val info = MbtilesReader.read(file)
+            val existing = db.readLayers()
+            val layer = MapLayer(
+                id = id,
+                name = (info.name ?: displayName).trim().ifBlank { "نقشه بدون نام" },
+                filePath = file.absolutePath,
+                format = info.format,
+                minZoom = info.minZoom,
+                maxZoom = info.maxZoom,
+                bounds = info.bounds,
+                tileSize = info.tileSize,
+                visible = true,
+                opacity = 1f,
+                sortOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1,
+                attribution = info.attribution,
+                vectorLayers = info.vectorLayers,
+                fileSizeBytes = file.length(),
+                addedAt = System.currentTimeMillis(),
+            )
+            db.upsertLayer(layer)
+            layer
+        }
 
     suspend fun setVisible(layer: MapLayer, visible: Boolean) = withContext(Dispatchers.IO) {
         db.setLayerVisible(layer.id, visible)

@@ -161,6 +161,7 @@ class MapController(@Suppress("unused") private val appContext: Context) {
         gpsJson: String,
         accuracyJson: String,
         searchJson: String,
+        navJson: String = "",
     ) {
         updateSource(MapStyleBuilder.SRC_WAYPOINTS, waypointsJson)
         updateSource(MapStyleBuilder.SRC_MEASURE, measureJson)
@@ -169,6 +170,7 @@ class MapController(@Suppress("unused") private val appContext: Context) {
         updateSource(MapStyleBuilder.SRC_GPS, gpsJson)
         updateSource(MapStyleBuilder.SRC_GPS_ACCURACY, accuracyJson)
         updateSource(MapStyleBuilder.SRC_SEARCH, searchJson)
+        if (navJson.isNotEmpty()) updateSource(MapStyleBuilder.SRC_NAV, navJson)
     }
 
     // ----------------------------------------------------------------- camera

@@ -134,20 +134,26 @@ class TrackSession(
         pointCount = points.size,
     )
 
-    fun toTrack(recording: Boolean): Track = Track(
-        id = id,
-        name = name,
-        points = points.toList(),
-        distanceMeters = distance,
-        durationSeconds = elapsedSeconds(),
-        startedAt = startedAt,
-        endedAt = now(),
-        ascentMeters = ascent,
-        descentMeters = descent,
-        maxSpeedMps = maxSpeed,
-        color = "#FF9F45",
-        isRecording = recording,
-    )
+    fun toTrack(recording: Boolean): Track {
+        val ended = now()
+        return Track(
+            id = id,
+            name = name,
+            points = points.toList(),
+            distanceMeters = distance,
+            // Wall-clock duration includes pauses; moving time does not. Storing both
+            // is what makes "stopped for 40 minutes" visible on the track card.
+            durationSeconds = ((ended - startedAt) / 1000).coerceAtLeast(0),
+            startedAt = startedAt,
+            endedAt = ended,
+            ascentMeters = ascent,
+            descentMeters = descent,
+            maxSpeedMps = maxSpeed,
+            color = "#FF9F45",
+            isRecording = recording,
+            movingSeconds = elapsedSeconds(ended),
+        )
+    }
 
     fun pointsForLivePreview(): List<LatLon> =
         if (points.size >= 2) points.map { LatLon(it.lat, it.lon) } else emptyList()

@@ -70,6 +70,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
                 point_count INTEGER NOT NULL DEFAULT 0,
                 distance_m REAL NOT NULL DEFAULT 0,
                 duration_s INTEGER NOT NULL DEFAULT 0,
+                moving_s INTEGER NOT NULL DEFAULT 0,
                 started_at INTEGER NOT NULL,
                 ended_at INTEGER NOT NULL,
                 ascent_m REAL NOT NULL DEFAULT 0,
@@ -141,6 +142,12 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_places_unique " +
                     "ON map_places(layer_id, name_norm, lat, lon)",
             )
+        }
+        if (oldVersion < 9) {
+            // Total time and moving time are now stored separately so a paused lunch
+            // break is visible instead of disappearing into the duration.
+            db.execSQL("ALTER TABLE tracks ADD COLUMN moving_s INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("UPDATE tracks SET moving_s = duration_s WHERE moving_s = 0")
         }
         if (oldVersion < 8) {
             // Search folding now also unifies آ/أ/إ with ا. Rows indexed by an older
@@ -595,6 +602,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         put("point_count", points.size)
         put("distance_m", distanceMeters)
         put("duration_s", durationSeconds)
+        put("moving_s", movingSeconds)
         put("started_at", startedAt)
         put("ended_at", endedAt)
         put("ascent_m", ascentMeters)
@@ -617,11 +625,15 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VERS
         maxSpeedMps = getDouble(getColumnIndexOrThrow("max_speed")),
         color = getString(getColumnIndexOrThrow("color")),
         isRecording = getInt(getColumnIndexOrThrow("recording")) == 1,
+        movingSeconds = getColumnIndex("moving_s")
+            .takeIf { it >= 0 }
+            ?.let { getLong(it) }
+            ?: 0L,
     )
 
     companion object {
         private const val NAME = "atlasgis.db"
-        private const val VERSION = 8
+        private const val VERSION = 9
 
         fun newId(): String = UUID.randomUUID().toString()
 

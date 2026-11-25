@@ -21,11 +21,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.atlasgis.app.core.CoordinateFormat
+import ir.atlasgis.app.core.analyzeTrack
 import ir.atlasgis.app.core.distanceMeters
 import ir.atlasgis.app.core.formatArea
 import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.core.formatDistance
 import ir.atlasgis.app.core.formatDuration
+import ir.atlasgis.app.core.formatElevation
 import ir.atlasgis.app.core.formatSpeed
 import ir.atlasgis.app.core.toPersianDigits
 import ir.atlasgis.app.data.AppSettings
@@ -55,6 +57,7 @@ fun WaypointsSheet(
     onShow: (Waypoint) -> Unit,
     onEdit: (Waypoint) -> Unit,
     onDelete: (Waypoint) -> Unit,
+    onShare: (Waypoint) -> Unit,
     onFitAll: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
@@ -217,6 +220,7 @@ fun WaypointsSheet(
                             onClick = { onShow(waypoint) },
                             onEdit = { onEdit(waypoint) },
                             onDelete = { onDelete(waypoint) },
+                            onShare = { onShare(waypoint) },
                         )
                     }
                 }
@@ -253,6 +257,7 @@ private fun WaypointRow(
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onShare: () -> Unit,
 ) {
     GlassPanel(Modifier.fillMaxWidth()) {
         Row(
@@ -296,6 +301,7 @@ private fun WaypointRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            RoundIconButton(Icons.Rounded.Share, "اشتراک‌گذاری", onShare, tint = AtlasColors.TextSecondary)
             RoundIconButton(Icons.Rounded.Edit, "ویرایش", onEdit, tint = AtlasColors.TextSecondary)
             RoundIconButton(Icons.Rounded.Delete, "حذف", onDelete, tint = AtlasColors.TextMuted)
         }
@@ -314,6 +320,8 @@ fun TracksSheet(
     onRename: (Track, String) -> Unit,
     onExportAll: (Boolean) -> Unit,
     onExportTrack: (Track, Boolean) -> Unit,
+    onFollow: (Track) -> Unit,
+    onShare: (Track, Boolean) -> Unit,
     onImport: () -> Unit,
 ) {
     var detail by remember { mutableStateOf<Track?>(null) }
@@ -416,6 +424,11 @@ fun TracksSheet(
                 detail = null
                 onExportTrack(track, gpx)
             },
+            onFollow = {
+                detail = null
+                onFollow(track)
+            },
+            onShare = { gpx -> onShare(track, gpx) },
         )
     }
 
@@ -512,12 +525,15 @@ private fun TrackDetailDialog(
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onExport: (Boolean) -> Unit,
+    onFollow: () -> Unit,
+    onShare: (Boolean) -> Unit,
 ) {
     val date = remember(track.startedAt) {
         SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US)
             .format(Date(track.startedAt))
             .toPersianDigits()
     }
+    val analysis = remember(track) { analyzeTrack(track) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AtlasColors.SurfaceElevated,
@@ -534,16 +550,36 @@ private fun TrackDetailDialog(
                     color = AtlasColors.TextMuted,
                 )
                 Spacer(Modifier.height(12.dp))
-                TrackStatRow("مسافت", formatDistance(track.distanceMeters))
-                TrackStatRow("مدت", formatDuration(track.durationSeconds))
+                TrackStatRow("مسافت", formatDistance(analysis.totalDistanceMeters))
+                TrackStatRow("مدت کل", formatDuration(analysis.totalSeconds))
+                TrackStatRow("زمان حرکت", formatDuration(analysis.movingSeconds))
+                TrackStatRow("زمان توقف", formatDuration(analysis.stoppedSeconds))
+                TrackStatRow("میانگین سرعت", formatSpeed(analysis.averageMovingSpeedMps))
                 TrackStatRow("سرعت بیشینه", formatSpeed(track.maxSpeedMps))
-                TrackStatRow("صعود", formatDistance(track.ascentMeters))
-                TrackStatRow("فرود", formatDistance(track.descentMeters))
+                TrackStatRow("صعود", formatDistance(analysis.ascentMeters))
+                TrackStatRow("فرود", formatDistance(analysis.descentMeters))
+                if (analysis.hasElevation) {
+                    TrackStatRow(
+                        "ارتفاع",
+                        "${formatElevation(analysis.minElevation)} تا ${formatElevation(analysis.maxElevation)}",
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                TrackProfileChart(analysis, Modifier.fillMaxWidth())
+                Spacer(Modifier.height(12.dp))
+                TrackSplitsList(analysis)
                 Spacer(Modifier.height(14.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    HudActionButton(
+                        "دنبال‌کردن مسیر",
+                        Icons.Rounded.Navigation,
+                        onFollow,
+                        accent = AtlasColors.Info,
+                    )
+                    HudActionButton("اشتراک GPX", Icons.Rounded.Share, { onShare(true) })
                     HudActionButton("خروجی GPX", Icons.Rounded.FileUpload, { onExport(true) })
                     HudActionButton("خروجی GeoJSON", Icons.Rounded.DataObject, { onExport(false) })
                     HudActionButton("تغییر نام", Icons.Rounded.Edit, onRename)
@@ -619,6 +655,8 @@ fun SettingsSheet(
     onScaleBar: (Boolean) -> Unit,
     onShowCoordinates: (Boolean) -> Unit,
     onGoTo: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -719,7 +757,74 @@ fun SettingsSheet(
             Spacer(Modifier.height(14.dp))
 
             Text(
-                text = "AtlasGIS 1.0.0 — نمایش آفلاین MBTiles با موتور رندر MapLibre Native (OpenGL ES). " +
+                "پشتیبان‌گیری و بازیابی",
+                style = MaterialTheme.typography.labelMedium,
+                color = AtlasColors.TextSecondary,
+            )
+            Spacer(Modifier.height(8.dp))
+            GlassPanel(Modifier.fillMaxWidth()) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .clickable(onClick = onBackup)
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Rounded.SettingsBackupRestore,
+                            null,
+                            tint = AtlasColors.Accent,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "ساخت پشتیبان کامل",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = AtlasColors.TextPrimary,
+                            )
+                            Text(
+                                "همهٔ نقاط، مسیرها و دسته‌بندی‌ها در یک فایل JSON",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AtlasColors.TextMuted,
+                            )
+                        }
+                        Icon(Icons.Rounded.ChevronLeft, null, tint = AtlasColors.TextMuted)
+                    }
+                    HorizontalDivider(color = AtlasColors.OutlineSoft)
+                    Row(
+                        modifier = Modifier
+                            .clickable(onClick = onRestore)
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Restore,
+                            null,
+                            tint = AtlasColors.Info,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "بازگردانی از پشتیبان",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = AtlasColors.TextPrimary,
+                            )
+                            Text(
+                                "نقاط هم‌شناسه به‌روزرسانی می‌شوند؛ دادهٔ فعلی پاک نمی‌شود",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AtlasColors.TextMuted,
+                            )
+                        }
+                        Icon(Icons.Rounded.ChevronLeft, null, tint = AtlasColors.TextMuted)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+
+            Text(
+                text = "AtlasGIS 1.1.0 — نمایش آفلاین MBTiles با موتور رندر MapLibre Native (OpenGL ES). " +
                     "همه داده‌ها روی همین دستگاه ذخیره می‌شوند و برنامه بدون اینترنت کار می‌کند.",
                 style = MaterialTheme.typography.labelSmall,
                 color = AtlasColors.TextMuted,

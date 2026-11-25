@@ -18,6 +18,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -83,6 +85,11 @@ fun MapScreen(viewModel: MapViewModel) {
     val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
     val searchIndexProgress by viewModel.searchIndexProgress.collectAsStateWithLifecycle()
     val searchFocus by viewModel.searchFocus.collectAsStateWithLifecycle()
+    val nav by viewModel.nav.collectAsStateWithLifecycle()
+    val deviceHeading by viewModel.deviceHeading.collectAsStateWithLifecycle()
+    val download by viewModel.download.collectAsStateWithLifecycle()
+    val restorePreview by viewModel.restorePreview.collectAsStateWithLifecycle()
+    val cameraInfo by controller.camera.collectAsStateWithLifecycle()
     val cardsScroll = rememberScrollState()
     val clipboard = LocalClipboardManager.current
 
@@ -95,6 +102,9 @@ fun MapScreen(viewModel: MapViewModel) {
     var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
     var showGoToDialog by remember { mutableStateOf(false) }
     var recordingCardExpanded by remember { mutableStateOf(true) }
+    var showDownloadSheet by remember { mutableStateOf(false) }
+    var pendingDownloadSheet by remember { mutableStateOf(false) }
+    var downloadWasActive by remember { mutableStateOf(false) }
 
     // A fresh recording always starts with the full card visible.
     LaunchedEffect(recordingBadge.active) {
@@ -120,6 +130,29 @@ fun MapScreen(viewModel: MapViewModel) {
         }
         pendingExport = null
     }
+    val backupCreator = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let(viewModel::createBackup) }
+    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(viewModel::previewRestore)
+    }
+
+    // A sheet must be closed before the download sheet takes its place; opening both
+    // at once makes Android dismiss the wrong back stack entry.
+    LaunchedEffect(pendingDownloadSheet, sheet) {
+        if (pendingDownloadSheet && sheet == Sheet.NONE) {
+            pendingDownloadSheet = false
+            showDownloadSheet = true
+        }
+    }
+    LaunchedEffect(download) {
+        if (download != null) {
+            downloadWasActive = true
+        } else if (downloadWasActive) {
+            downloadWasActive = false
+            showDownloadSheet = false
+        }
+    }
 
     var locationGranted by remember {
         mutableStateOf(
@@ -143,6 +176,7 @@ fun MapScreen(viewModel: MapViewModel) {
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.POST_NOTIFICATIONS,
                 ),
             )
         }
@@ -161,11 +195,13 @@ fun MapScreen(viewModel: MapViewModel) {
     BackHandler(
         enabled = sheet == Sheet.NONE && pendingWaypoint == null && editingWaypoint == null &&
             deleteWaypointTarget == null && !showGoToDialog && importing == null &&
-            (measure.active || recordArmed || searchFocus != null || selectedWaypointId != null || !chromeVisible),
+            (measure.active || recordArmed || searchFocus != null || selectedWaypointId != null ||
+                nav != null || !chromeVisible),
     ) {
         when {
             measure.active -> viewModel.stopMeasure()
             recordArmed -> viewModel.cancelArmRecording()
+            nav != null -> viewModel.stopNavigation()
             searchFocus != null -> viewModel.clearSearchFocus()
             selectedWaypointId != null -> viewModel.selectWaypoint(null)
             else -> viewModel.setChromeVisible(true)
@@ -267,6 +303,15 @@ fun MapScreen(viewModel: MapViewModel) {
                             .verticalScroll(cardsScroll),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
+                        nav?.let { state ->
+                            NavigationCard(
+                                state = state,
+                                hasCompass = deviceHeading != null,
+                                onStop = viewModel::stopNavigation,
+                                onCenterOnTarget = viewModel::centerOnNavigationTarget,
+                            )
+                        }
+
                         AnimatedVisibility(
                             visible = searchFocus != null,
                             enter = expandVertically(),
@@ -279,6 +324,7 @@ fun MapScreen(viewModel: MapViewModel) {
                                         distanceMeters(LatLon(it.lat, it.lon), hit.position)
                                     },
                                     onClose = viewModel::clearSearchFocus,
+                                    onNavigate = { viewModel.navigateToSearchHit(hit) },
                                 )
                             }
                         }
@@ -382,6 +428,7 @@ fun MapScreen(viewModel: MapViewModel) {
             ) {
                 EmptyMapsCard(
                     onImport = { mapPicker.launch(arrayOf("*/*")) },
+                    onDownload = { showDownloadSheet = true },
                     modifier = Modifier.padding(bottom = if (locationGranted) 0.dp else 130.dp),
                 )
             }
@@ -441,6 +488,10 @@ fun MapScreen(viewModel: MapViewModel) {
             layers = layers,
             onDismiss = viewModel::closeSheet,
             onImport = { mapPicker.launch(arrayOf("*/*")) },
+            onDownload = {
+                pendingDownloadSheet = true
+                viewModel.closeSheet()
+            },
             onToggle = viewModel::toggleLayer,
             onOpacity = viewModel::setLayerOpacity,
             onMove = viewModel::moveLayer,
@@ -470,6 +521,7 @@ fun MapScreen(viewModel: MapViewModel) {
             onShow = viewModel::showWaypointOnMap,
             onEdit = { viewModel.closeSheet(); viewModel.startEditingWaypoint(it) },
             onDelete = { deleteWaypointTarget = it },
+            onShare = viewModel::shareWaypoint,
             onFitAll = { viewModel.fitAllWaypoints(); viewModel.closeSheet() },
             onExport = {
                 pendingExport = PendingExport(MapViewModel.ExportKind.WAYPOINTS_GPX)
@@ -502,6 +554,8 @@ fun MapScreen(viewModel: MapViewModel) {
                 )
                 exporter.launch(safeFileName(track.name, if (gpx) "gpx" else "geojson"))
             },
+            onFollow = { track -> viewModel.followTrack(track) },
+            onShare = { track, gpx -> viewModel.shareTrack(track, gpx) },
             onImport = { geoPicker.launch(arrayOf("*/*")) },
         )
 
@@ -530,9 +584,60 @@ fun MapScreen(viewModel: MapViewModel) {
                 viewModel.closeSheet()
                 showGoToDialog = true
             },
+            onBackup = {
+                viewModel.closeSheet()
+                backupCreator.launch(viewModel.backupSuggestedName())
+            },
+            onRestore = {
+                viewModel.closeSheet()
+                restorePicker.launch(arrayOf("application/json", "text/plain", "*/*"))
+            },
         )
 
         Sheet.NONE -> Unit
+    }
+
+    // ------------------------------------------------------------ downloads
+
+    if (showDownloadSheet) {
+        DownloadMapSheet(
+            currentBounds = cameraInfo?.bounds,
+            progress = download,
+            onDismiss = { showDownloadSheet = false },
+            onDownloadMbTiles = viewModel::downloadMbTiles,
+            onDownloadRegion = viewModel::downloadRegion,
+            onCancelDownload = viewModel::cancelDownload,
+        )
+    }
+
+    restorePreview?.let { preview ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelRestore,
+            containerColor = AtlasColors.SurfaceElevated,
+            icon = { Icon(Icons.Rounded.SettingsBackupRestore, null, tint = AtlasColors.Accent) },
+            title = { Text("بازگردانی پشتیبان", color = AtlasColors.TextPrimary) },
+            text = {
+                Column {
+                    Text(preview.summary, color = AtlasColors.TextSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "نقاط و مسیرهای هم‌شناسه به‌روزرسانی می‌شوند؛ داده‌های دیگر پاک نمی‌شوند.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AtlasColors.TextMuted,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmRestore) {
+                    Text("بازگردانی", color = AtlasColors.Accent)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelRestore) {
+                    Text("انصراف", color = AtlasColors.TextSecondary)
+                }
+            },
+        )
     }
 
     // ----------------------------------------------------------------- dialogs
@@ -719,5 +824,7 @@ private fun WaypointCardLive(
         onEdit = onEdit,
         onDelete = onDelete,
         onCenter = onCenter,
+        onNavigate = { viewModel.navigateToWaypoint(waypoint) },
+        onShare = { viewModel.shareWaypoint(waypoint) },
     )
 }

@@ -36,6 +36,7 @@ fun LayersSheet(
     layers: List<MapLayer>,
     onDismiss: () -> Unit,
     onImport: () -> Unit,
+    onDownload: () -> Unit,
     onToggle: (MapLayer) -> Unit,
     onOpacity: (MapLayer, Float) -> Unit,
     onMove: (MapLayer, Boolean) -> Unit,
@@ -66,8 +67,17 @@ fun LayersSheet(
                 title = "نقشه‌های آفلاین",
                 subtitle = "${layers.size.toString().toPersianDigits()} فایل · ${formatBytes(totalBytes)}",
                 action = {
-                    IconButton(onClick = onImport) {
-                        Icon(Icons.Rounded.Add, contentDescription = "افزودن نقشه", tint = AtlasColors.Accent)
+                    Row {
+                        IconButton(onClick = onDownload) {
+                            Icon(
+                                Icons.Rounded.CloudDownload,
+                                contentDescription = "دریافت نقشه از اینترنت",
+                                tint = AtlasColors.TextSecondary,
+                            )
+                        }
+                        IconButton(onClick = onImport) {
+                            Icon(Icons.Rounded.Add, contentDescription = "افزودن نقشه", tint = AtlasColors.Accent)
+                        }
                     }
                 },
             )
@@ -88,6 +98,13 @@ fun LayersSheet(
                                 contentColor = AtlasColors.OnAccent,
                             ),
                         ) { Text("انتخاب فایل MBTiles") }
+                        TextButton(onClick = onDownload) {
+                            Text(
+                                "یا دریافت نقشه از اینترنت",
+                                color = AtlasColors.TextSecondary,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
                     }
                 }
             } else {

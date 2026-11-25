@@ -17,6 +17,7 @@ object MapStyleBuilder {
     const val SRC_GPS = "atlas-gps"
     const val SRC_GPS_ACCURACY = "atlas-gps-accuracy"
     const val SRC_SEARCH = "atlas-search"
+    const val SRC_NAV = "atlas-navigation"
 
     const val LAYER_MEASURE_FILL = "atlas-measure-fill"
     const val LAYER_MEASURE_LINE = "atlas-measure-line"
@@ -34,11 +35,14 @@ object MapStyleBuilder {
     const val LAYER_SEARCH_HALO = "atlas-search-halo"
     const val LAYER_SEARCH_RING = "atlas-search-ring"
     const val LAYER_SEARCH_DOT = "atlas-search-dot"
+    const val LAYER_NAV_ROUTE = "atlas-nav-route"
+    const val LAYER_NAV_DIRECT = "atlas-nav-direct"
     const val LAYER_BACKGROUND = "atlas-background"
 
     private const val ACCENT = "#3ED598"
     private const val MEASURE_COLOR = "#7C8CFF"
     private const val SEARCH_ACCENT = "#FFC15E"
+    private const val NAV_COLOR = "#5FB8FF"
 
     /**
      * Offline text: the signed-distance glyph sets are bundled in the APK and read
@@ -101,6 +105,7 @@ object MapStyleBuilder {
         sources.put(SRC_MEASURE, geojsonSource())
         sources.put(SRC_TRACKS, geojsonSource())
         sources.put(SRC_ACTIVE_TRACK, geojsonSource())
+        sources.put(SRC_NAV, geojsonSource())
         sources.put(SRC_WAYPOINTS, geojsonSource())
         sources.put(SRC_SEARCH, geojsonSource())
         sources.put(SRC_GPS_ACCURACY, geojsonSource())
@@ -157,6 +162,55 @@ object MapStyleBuilder {
                     JSONObject()
                         .put("line-color", "#FF9F45")
                         .put("line-width", zoomInterpolate(8 to 2.5, 14 to 5.0, 20 to 8.0)),
+                ),
+        )
+        // Guidance: the remaining part of a followed track, or the straight bearing
+        // to a single target. Drawn between the saved tracks and the waypoint pins.
+        styleLayers.put(
+            JSONObject()
+                .put("id", LAYER_NAV_ROUTE)
+                .put("type", "line")
+                .put("source", SRC_NAV)
+                .put(
+                    "filter",
+                    JSONArray().put("==").put(JSONArray().put("get").put("role")).put("route"),
+                )
+                .put(
+                    "layout",
+                    JSONObject()
+                        .put("line-cap", "round")
+                        .put("line-join", "round"),
+                )
+                .put(
+                    "paint",
+                    JSONObject()
+                        .put("line-color", NAV_COLOR)
+                        .put("line-width", zoomInterpolate(8 to 3.0, 14 to 5.0, 20 to 8.0))
+                        .put("line-opacity", 0.9),
+                ),
+        )
+        styleLayers.put(
+            JSONObject()
+                .put("id", LAYER_NAV_DIRECT)
+                .put("type", "line")
+                .put("source", SRC_NAV)
+                .put(
+                    "filter",
+                    JSONArray().put("==").put(JSONArray().put("get").put("role")).put("direct"),
+                )
+                .put(
+                    "layout",
+                    JSONObject()
+                        .put("line-cap", "round")
+                        .put("line-join", "round"),
+                )
+                .put(
+                    "paint",
+                    JSONObject()
+                        .put("line-color", NAV_COLOR)
+                        .put("line-width", 3.0)
+                        .put("line-dasharray", JSONArray().put(2).put(1.4))
+                        .put("line-opacity", 0.95),
                 ),
         )
         styleLayers.put(

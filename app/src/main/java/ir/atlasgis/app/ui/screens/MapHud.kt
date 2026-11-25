@@ -39,6 +39,7 @@ import ir.atlasgis.app.core.formatCoordinate
 import ir.atlasgis.app.core.formatDistance
 import ir.atlasgis.app.core.formatDistanceShort
 import ir.atlasgis.app.core.formatDuration
+import ir.atlasgis.app.core.compassLabel
 import ir.atlasgis.app.core.formatSpeed
 import ir.atlasgis.app.core.niceScaleDistance
 import ir.atlasgis.app.core.toPersianDigits
@@ -47,6 +48,8 @@ import ir.atlasgis.app.data.MeasureMode
 import ir.atlasgis.app.data.RecordingState
 import ir.atlasgis.app.data.Waypoint
 import ir.atlasgis.app.ui.MeasureUiState
+import ir.atlasgis.app.ui.NavKind
+import ir.atlasgis.app.ui.NavigationState
 import ir.atlasgis.app.ui.SearchHit
 import ir.atlasgis.app.ui.components.GlassPanel
 import ir.atlasgis.app.ui.components.GradientBadge
@@ -377,6 +380,8 @@ fun WaypointCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onCenter: () -> Unit,
+    onNavigate: () -> Unit,
+    onShare: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     GlassPanel(modifier = modifier.fillMaxWidth()) {
@@ -429,7 +434,13 @@ fun WaypointCard(
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HudActionButton("ناوبری", Icons.Rounded.Navigation, onNavigate, accent = AtlasColors.Info)
                 HudActionButton("نمایش روی نقشه", Icons.Rounded.MyLocation, onCenter)
+                Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HudActionButton("اشتراک", Icons.Rounded.Share, onShare)
                 Spacer(Modifier.weight(1f))
                 HudActionButton("ویرایش", Icons.Rounded.Edit, onEdit)
                 HudActionButton("حذف", Icons.Rounded.Delete, onDelete, accent = AtlasColors.Danger)
@@ -444,12 +455,13 @@ fun SearchFocusCard(
     hit: SearchHit,
     distanceMeters: Double?,
     onClose: () -> Unit,
+    onNavigate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val accent = if (hit.fromWaypoint) AtlasColors.Accent else poiColorFor(hit.kind)
     GlassPanel(modifier = modifier.fillMaxWidth(), borderColor = accent.copy(alpha = 0.5f)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
         Row(
-            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -487,6 +499,118 @@ fun SearchFocusCard(
                 )
             }
             RoundIconButton(Icons.Rounded.Close, "بستن نتیجهٔ جست‌وجو", onClose)
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            HudActionButton("ناوبری", Icons.Rounded.Navigation, onNavigate, accent = AtlasColors.Info)
+            Spacer(Modifier.weight(1f))
+        }
+        }
+    }
+}
+
+/**
+ * Live guidance card: a rotated arrow (relative to the phone when a compass exists),
+ * distance, ETA and the off-route warning for track-back navigation.
+ */
+@Composable
+fun NavigationCard(
+    state: NavigationState,
+    hasCompass: Boolean,
+    onStop: () -> Unit,
+    onCenterOnTarget: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = AtlasColors.Info
+    val arrow = state.relativeBearing ?: state.bearingDegrees?.toFloat() ?: 0f
+    GlassPanel(modifier = modifier.fillMaxWidth(), borderColor = accent.copy(alpha = 0.55f)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Navigation,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier
+                            .size(22.dp)
+                            .rotate(arrow),
+                    )
+                }
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = if (state.kind == NavKind.TRACK) "دنبال‌کردن مسیر" else "ناوبری",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accent,
+                    )
+                    Text(
+                        text = state.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = AtlasColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                RoundIconButton(Icons.Rounded.Close, "پایان ناوبری", onStop)
+            }
+            Spacer(Modifier.height(6.dp))
+            Row {
+                StatBlock(
+                    "فاصله",
+                    state.distanceMeters?.let { formatDistance(it) } ?: "—",
+                    Modifier.weight(1f),
+                )
+                StatBlock(
+                    "زمان تقریبی",
+                    state.etaSeconds?.let { formatDuration(it) } ?: "—",
+                    Modifier.weight(1f),
+                )
+                StatBlock(
+                    "جهت",
+                    state.bearingDegrees?.let { compassLabel(it) } ?: "—",
+                    Modifier.weight(1f),
+                )
+            }
+            if (state.arrived) {
+                Spacer(Modifier.height(6.dp))
+                StatusChip(
+                    text = "به مقصد رسیدید",
+                    icon = Icons.Rounded.CheckCircle,
+                    color = AtlasColors.Accent,
+                )
+            } else if (state.kind == NavKind.TRACK && (state.offRouteMeters ?: 0.0) > 40.0) {
+                Spacer(Modifier.height(6.dp))
+                StatusChip(
+                    text = "${formatDistance(state.offRouteMeters ?: 0.0)} از مسیر فاصله دارید؛ به خط آبی برگردید",
+                    icon = Icons.Rounded.WarningAmber,
+                    color = AtlasColors.Warning,
+                )
+            } else if (!hasCompass) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "قطب‌نمای دستگاه در دسترس نیست؛ جهت نسبت به شمال است.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AtlasColors.TextMuted,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HudActionButton("نمایش مقصد", Icons.Rounded.MyLocation, onCenterOnTarget)
+                if (state.kind == NavKind.TRACK) {
+                    HudActionButton(
+                        "پایان",
+                        Icons.Rounded.Check,
+                        onStop,
+                        accent = AtlasColors.TextSecondary,
+                    )
+                }
+            }
         }
     }
 }
@@ -642,7 +766,11 @@ fun MapScaleBar(metersPerPixel: Double, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun EmptyMapsCard(onImport: () -> Unit, modifier: Modifier = Modifier) {
+fun EmptyMapsCard(
+    onImport: () -> Unit,
+    onDownload: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     GlassPanel(modifier = modifier) {
         Column(
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
@@ -688,6 +816,12 @@ fun EmptyMapsCard(onImport: () -> Unit, modifier: Modifier = Modifier) {
                 Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("افزودن فایل MBTiles", style = MaterialTheme.typography.labelMedium)
+            }
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onDownload) {
+                Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("یا دریافت نقشه از اینترنت", color = AtlasColors.TextSecondary, style = MaterialTheme.typography.labelSmall)
             }
         }
     }

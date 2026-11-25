@@ -7,15 +7,23 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ir.atlasgis.app.core.BoundingBox
 import ir.atlasgis.app.core.LatLon
+import ir.atlasgis.app.core.bearingDegrees
 import ir.atlasgis.app.core.boundingBoxOf
+import ir.atlasgis.app.core.distanceMeters
+import ir.atlasgis.app.core.estimateSpeedMps
+import ir.atlasgis.app.core.locateOnRoute
 import ir.atlasgis.app.core.parseCoordinateInput
 import ir.atlasgis.app.core.pathLengthMeters
 import ir.atlasgis.app.core.polygonAreaSqMeters
 import ir.atlasgis.app.data.AppDatabase
 import ir.atlasgis.app.data.AppSettings
+import ir.atlasgis.app.data.BackupCodec
+import ir.atlasgis.app.data.BackupManager
+import ir.atlasgis.app.data.CompassProvider
 import ir.atlasgis.app.data.GeoFileCodec
 import ir.atlasgis.app.data.GpsFix
 import ir.atlasgis.app.data.MapLayer
+import ir.atlasgis.app.data.MapDownloader
 import ir.atlasgis.app.data.MapLibrary
 import ir.atlasgis.app.data.MapPlace
 import ir.atlasgis.app.data.MapStyleBuilder
@@ -28,9 +36,12 @@ import ir.atlasgis.app.data.PoiClassifier
 import ir.atlasgis.app.data.TileFormat
 import ir.atlasgis.app.data.RecordingState
 import ir.atlasgis.app.data.SettingsStore
+import ir.atlasgis.app.data.ShareHelper
 import ir.atlasgis.app.data.Track
 import ir.atlasgis.app.data.Waypoint
 import ir.atlasgis.app.data.WaypointCategoryStyle
+import ir.atlasgis.app.domain.RecordingEngine
+import ir.atlasgis.app.domain.RecordingService
 import ir.atlasgis.app.domain.TrackSession
 import ir.atlasgis.app.ui.map.MapController
 import kotlinx.coroutines.Dispatchers
@@ -78,12 +89,46 @@ data class MeasureUiState(
 
 data class ImportUiState(val label: String, val progress: Float, val indeterminate: Boolean)
 
+enum class NavKind { POINT, TRACK }
+
+/** Live guidance for a target point or a followed track. */
+data class NavigationState(
+    val label: String,
+    val target: LatLon,
+    val kind: NavKind,
+    val distanceMeters: Double? = null,
+    val bearingDegrees: Double? = null,
+    /** Bearing relative to where the phone is facing (null without a compass). */
+    val relativeBearing: Float? = null,
+    val etaSeconds: Long? = null,
+    val arrived: Boolean = false,
+    val offRouteMeters: Double? = null,
+    val remainingMeters: Double? = null,
+    val progress: Float? = null,
+)
+
+data class DownloadUiState(
+    val label: String,
+    val progress: Float,
+    val indeterminate: Boolean = false,
+    val detail: String = "",
+)
+
+/** A backup file that has been read and is waiting for the user's confirmation. */
+data class RestorePreview(
+    val snapshot: BackupCodec.Snapshot,
+    val summary: String,
+)
+
 class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     private val library = MapLibrary(application)
     private val db = AppDatabase(application)
     private val settingsStore = SettingsStore(application)
-    private val locationProvider = ir.atlasgis.app.data.LocationProvider(application)
+    private val engine = RecordingEngine.get(application)
+    private val compass = CompassProvider(application)
+    private val mapDownloader = MapDownloader(application)
+    private val backupManager = BackupManager(application)
 
     val controller = MapController(application)
 
@@ -108,8 +153,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _measure = MutableStateFlow(MeasureUiState())
     val measure: StateFlow<MeasureUiState> = _measure.asStateFlow()
 
-    private val _recording = MutableStateFlow(RecordingState())
-    val recording: StateFlow<RecordingState> = _recording.asStateFlow()
+    val recording: StateFlow<RecordingState> = engine.recording
 
     private val _sheet = MutableStateFlow(Sheet.NONE)
     val sheet: StateFlow<Sheet> = _sheet.asStateFlow()
@@ -140,8 +184,24 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val messages: SharedFlow<String> = _messages
 
-    private val _gps = MutableStateFlow<GpsFix?>(null)
-    val gps: StateFlow<GpsFix?> = _gps.asStateFlow()
+    val gps: StateFlow<GpsFix?> = engine.gps
+
+    private val _nav = MutableStateFlow<NavigationState?>(null)
+    val nav: StateFlow<NavigationState?> = _nav.asStateFlow()
+
+    private val _deviceHeading = MutableStateFlow<Float?>(null)
+    val deviceHeading: StateFlow<Float?> = _deviceHeading.asStateFlow()
+
+    private val _download = MutableStateFlow<DownloadUiState?>(null)
+    val download: StateFlow<DownloadUiState?> = _download.asStateFlow()
+
+    private val _restorePreview = MutableStateFlow<RestorePreview?>(null)
+    val restorePreview: StateFlow<RestorePreview?> = _restorePreview.asStateFlow()
+
+    private var restoreSnapshot: BackupCodec.Snapshot? = null
+    private var downloadJob: Job? = null
+    private var navTrack: Track? = null
+    private var arrivalNotified = false
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -170,15 +230,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     val settings: StateFlow<AppSettings> = settingsStore.settings
 
-    @Volatile
-    private var activeSession: TrackSession? = null
-    private var tickerJob: Job? = null
-    private var lastPersistedAt = 0L
-    private var lastLivePushAt = 0L
     private var lastStyleKey: String? = null
     private var hadSavedCamera = false
-
-    private val _liveTrackPoints = MutableStateFlow<List<LatLon>>(emptyList())
 
     init {
         settingsStore.loadCamera()?.let { saved ->
@@ -275,10 +328,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 OverlayGeoJson.empty()
             },
-            activeTrackJson = OverlayGeoJson.line(_liveTrackPoints.value),
-            gpsJson = OverlayGeoJson.gpsPoint(_gps.value),
-            accuracyJson = OverlayGeoJson.accuracyRing(_gps.value),
+            activeTrackJson = OverlayGeoJson.line(engine.livePoints.value),
+            gpsJson = OverlayGeoJson.gpsPoint(gps.value),
+            accuracyJson = OverlayGeoJson.accuracyRing(gps.value),
             searchJson = OverlayGeoJson.searchFocus(_searchFocus.value?.position),
+            navJson = navOverlayJson(),
         )
     }
 
@@ -716,6 +770,318 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeMeasureAndReturn() = stopMeasure()
 
+    // ------------------------------------------------------------------ guidance
+
+    private fun navOverlayJson(): String {
+        val state = _nav.value ?: return OverlayGeoJson.empty()
+        val position = gps.value?.let { LatLon(it.lat, it.lon) }
+        val route = if (state.kind == NavKind.TRACK) {
+            navTrack?.points?.map { LatLon(it.lat, it.lon) }.orEmpty()
+        } else {
+            emptyList()
+        }
+        return OverlayGeoJson.navigation(position, state.target, route)
+    }
+
+    /** Starts guidance to a single point: bearing arrow, distance and ETA. */
+    fun navigateTo(label: String, position: LatLon) {
+        val name = label.ifBlank { "مقصد" }
+        navTrack = null
+        arrivalNotified = false
+        _nav.value = NavigationState(label = name, target = position, kind = NavKind.POINT)
+        _searchFocus.value = null
+        _sheet.value = Sheet.NONE
+        pushOverlays()
+        refreshNavigation(gps.value)
+        controller.flyTo(position, max(controller.zoom(), 15.0))
+        _messages.tryEmit("ناوبری به «$name» آغاز شد")
+    }
+
+    fun navigateToWaypoint(waypoint: Waypoint) =
+        navigateTo(waypoint.name, waypoint.position)
+
+    fun navigateToSearchHit(hit: SearchHit) =
+        navigateTo(hit.name, hit.position)
+
+    /**
+     * Track-back: keeps the saved line on screen and reports how far the user is from
+     * it, how much is left and which way to walk. The line itself is the guide — the
+     * app never invents a route it cannot verify against the map.
+     */
+    fun followTrack(track: Track) {
+        val points = track.points.map { LatLon(it.lat, it.lon) }
+        if (points.size < 2) {
+            _messages.tryEmit("این مسیر برای دنبال‌کردن نقطهٔ کافی ندارد")
+            return
+        }
+        navTrack = track
+        arrivalNotified = false
+        val position = gps.value?.let { LatLon(it.lat, it.lon) }
+        val progress = position?.let { locateOnRoute(it, points) }
+        _nav.value = NavigationState(
+            label = track.name,
+            target = points.getOrElse(progress?.nextIndex ?: 0) { points.last() },
+            kind = NavKind.TRACK,
+            offRouteMeters = progress?.offRouteMeters,
+            remainingMeters = progress?.remainingMeters ?: pathLengthMeters(points),
+            progress = progress?.fraction ?: 0f,
+        )
+        _sheet.value = Sheet.NONE
+        _searchFocus.value = null
+        _selectedWaypointId.value = null
+        pushOverlays()
+        refreshNavigation(gps.value)
+        controller.fitBounds(boundingBoxOf(points) ?: return, 96)
+        _messages.tryEmit("دنبال‌کردن مسیر «${track.name}» آغاز شد")
+    }
+
+    fun centerOnNavigationTarget() {
+        val state = _nav.value ?: return
+        controller.flyTo(state.target, max(controller.zoom(), 15.0))
+    }
+
+    fun stopNavigation() {
+        if (_nav.value == null) return
+        _nav.value = null
+        navTrack = null
+        arrivalNotified = false
+        controller.updateSource(MapStyleBuilder.SRC_NAV, OverlayGeoJson.empty())
+        _messages.tryEmit("ناوبری پایان یافت")
+    }
+
+    private fun refreshNavigation(fix: GpsFix?) {
+        val state = _nav.value ?: return
+        val position = fix?.let { LatLon(it.lat, it.lon) } ?: return
+        val heading = _deviceHeading.value
+        val recordingState = engine.recording.value
+        val speed = estimateSpeedMps(
+            gpsSpeed = fix.speedMps?.toDouble(),
+            movingDistance = recordingState.distanceMeters,
+            movingSeconds = recordingState.movingSeconds,
+        )
+
+        val updated = if (state.kind == NavKind.TRACK) {
+            val route = navTrack?.points?.map { LatLon(it.lat, it.lon) }.orEmpty()
+            val progress = locateOnRoute(position, route)
+            val target = route.getOrNull(progress?.nextIndex ?: 0) ?: route.lastOrNull() ?: state.target
+            val remaining = progress?.remainingMeters ?: state.remainingMeters
+            val bearing = if (route.size >= 2) bearingDegrees(position, target) else state.bearingDegrees
+            state.copy(
+                target = target,
+                distanceMeters = remaining,
+                remainingMeters = remaining,
+                offRouteMeters = progress?.offRouteMeters,
+                progress = progress?.fraction,
+                bearingDegrees = bearing,
+                relativeBearing = relativeToHeading(bearing, heading),
+                etaSeconds = estimateEta(remaining, speed),
+                arrived = (remaining ?: Double.MAX_VALUE) <= 20.0,
+            )
+        } else {
+            val direct = distanceMeters(position, state.target)
+            val bearing = bearingDegrees(position, state.target)
+            state.copy(
+                distanceMeters = direct,
+                bearingDegrees = bearing,
+                relativeBearing = relativeToHeading(bearing, heading),
+                etaSeconds = estimateEta(direct, speed),
+                arrived = direct <= 15.0,
+            )
+        }
+        _nav.value = updated
+        controller.updateSource(MapStyleBuilder.SRC_NAV, navOverlayJson())
+        if (updated.arrived && !arrivalNotified) {
+            arrivalNotified = true
+            _messages.tryEmit("به مقصد رسیدید: ${updated.label}")
+        } else if (!updated.arrived) {
+            arrivalNotified = false
+        }
+    }
+
+    private fun relativeToHeading(bearing: Double?, heading: Float?): Float? {
+        if (bearing == null) return null
+        if (heading == null) return bearing.toFloat()
+        var delta = bearing.toFloat() - heading
+        while (delta > 180f) delta -= 360f
+        while (delta < -180f) delta += 360f
+        return delta
+    }
+
+    private fun estimateEta(distance: Double?, speed: Double?): Long? {
+        if (distance == null || speed == null || speed <= 0.05) return null
+        return (distance / speed).toLong().coerceIn(0, 7L * 24 * 3600)
+    }
+
+    // ------------------------------------------------------------ map downloads
+
+    fun downloadMbTiles(url: String, name: String) {
+        if (downloadJob?.isActive == true) return
+        downloadJob = viewModelScope.launch {
+            _download.value = DownloadUiState("در حال دانلود نقشه", 0f)
+            runCatching {
+                val layer = withContext(Dispatchers.IO) {
+                    mapDownloader.downloadMbTiles(url, name.ifBlank { null }) { progress ->
+                        val fraction = if (progress.total > 0) {
+                            (progress.downloaded.toFloat() / progress.total).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        }
+                        _download.value = DownloadUiState(
+                            label = progress.phase.ifBlank { "در حال دانلود نقشه" },
+                            progress = fraction,
+                            indeterminate = progress.total <= 0,
+                            detail = if (progress.total > 0) {
+                                "${progress.downloaded / (1024 * 1024)} / ${progress.total / (1024 * 1024)} مگابایت"
+                            } else {
+                                "${progress.downloaded / (1024 * 1024)} مگابایت"
+                            },
+                        )
+                    }
+                }
+                _download.value = null
+                _layers.value = library.layers()
+                ensureStyle(force = true)
+                layer.bounds?.let { controller.fitBounds(it, 40) }
+                _messages.tryEmit("نقشه «${layer.name}» دانلود و افزوده شد")
+            }.onFailure { error ->
+                _download.value = null
+                _messages.tryEmit(error.message ?: "دانلود نقشه ناموفق بود")
+            }
+        }
+    }
+
+    fun downloadRegion(template: String, name: String, minZoom: Int, maxZoom: Int) {
+        if (downloadJob?.isActive == true) return
+        val bounds = controller.camera.value?.bounds
+        if (bounds == null) {
+            _messages.tryEmit("محدودهٔ دید نقشه هنوز آماده نیست")
+            return
+        }
+        downloadJob = viewModelScope.launch {
+            _download.value = DownloadUiState("در حال دانلود کاشی‌ها", 0f, true)
+            runCatching {
+                val layer = withContext(Dispatchers.IO) {
+                    mapDownloader.downloadTiles(template, name, bounds, minZoom, maxZoom) { progress ->
+                        val fraction = if (progress.tilesTotal > 0) {
+                            (progress.tilesDone.toFloat() / progress.tilesTotal).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        }
+                        _download.value = DownloadUiState(
+                            label = progress.phase.ifBlank { "در حال دانلود کاشی‌ها" },
+                            progress = fraction,
+                            indeterminate = progress.tilesTotal <= 0,
+                            detail = "${progress.tilesDone} از ${progress.tilesTotal} کاشی",
+                        )
+                    }
+                }
+                _download.value = null
+                _layers.value = library.layers()
+                ensureStyle(force = true)
+                layer.bounds?.let { controller.fitBounds(it, 40) }
+                _messages.tryEmit("نقشه «${layer.name}» ساخته و افزوده شد")
+            }.onFailure { error ->
+                _download.value = null
+                _messages.tryEmit(error.message ?: "دانلود کاشی‌ها ناموفق بود")
+            }
+        }
+    }
+
+    fun cancelDownload() {
+        val job = downloadJob ?: return
+        job.cancel()
+        downloadJob = null
+        _download.value = null
+        _messages.tryEmit("دانلود لغو شد")
+    }
+
+    // -------------------------------------------------------- backup and sharing
+
+    fun backupSuggestedName(): String = backupManager.suggestedFileName()
+
+    fun createBackup(uri: Uri) {
+        viewModelScope.launch {
+            _importing.value = ImportUiState("در حال ساخت پشتیبان…", 0f, true)
+            runCatching {
+                val snapshot = backupManager.snapshot()
+                withContext(Dispatchers.IO) { backupManager.writeBackup(uri, snapshot) }
+                _importing.value = null
+                _messages.tryEmit(
+                    "پشتیبان ذخیره شد: ${snapshot.waypoints.size} نقطه و ${snapshot.tracks.size} مسیر",
+                )
+            }.onFailure { error ->
+                _importing.value = null
+                _messages.tryEmit(error.message ?: "ساخت پشتیبان ناموفق بود")
+            }
+        }
+    }
+
+    /** Reads the file first and only merges it after the user confirms. */
+    fun previewRestore(uri: Uri) {
+        viewModelScope.launch {
+            _importing.value = ImportUiState("در حال خواندن پشتیبان…", 0f, true)
+            runCatching {
+                val snapshot = withContext(Dispatchers.IO) { backupManager.readBackup(uri) }
+                _importing.value = null
+                if (snapshot.waypoints.isEmpty() && snapshot.tracks.isEmpty()) {
+                    error("هیچ نقطه یا مسیری در این پشتیبان نیست")
+                }
+                restoreSnapshot = snapshot
+                _restorePreview.value = RestorePreview(snapshot, BackupCodec.summary(snapshot))
+            }.onFailure { error ->
+                _importing.value = null
+                _messages.tryEmit(error.message ?: "خواندن پشتیبان ناموفق بود")
+            }
+        }
+    }
+
+    fun confirmRestore() {
+        val snapshot = restoreSnapshot ?: return
+        _restorePreview.value = null
+        restoreSnapshot = null
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { backupManager.apply(snapshot) }
+                _waypoints.value = withContext(Dispatchers.IO) { db.readWaypoints() }
+                _tracks.value = withContext(Dispatchers.IO) { db.readTracks() }
+                _categoryStyles.value = withContext(Dispatchers.IO) { db.readCategoryStyles() }
+                pushOverlays()
+                _messages.tryEmit(
+                    "بازگردانی شد: ${snapshot.waypoints.size} نقطه و ${snapshot.tracks.size} مسیر",
+                )
+            }.onFailure { error ->
+                _messages.tryEmit(error.message ?: "بازگردانی پشتیبان ناموفق بود")
+            }
+        }
+    }
+
+    fun cancelRestore() {
+        _restorePreview.value = null
+        restoreSnapshot = null
+    }
+
+    fun shareWaypoint(waypoint: Waypoint) {
+        ShareHelper.shareWaypoint(getApplication(), waypoint)
+    }
+
+    fun shareTrack(track: Track, gpx: Boolean) {
+        runCatching {
+            val content = exportTrackContent(track, gpx)
+            val stem = track.name.trim()
+                .replace(Regex("[\\\\/:*?\"<>|]"), "-")
+                .replace(Regex("\\s+"), "-")
+                .take(48)
+                .ifBlank { "atlasgis-track" }
+            val extension = if (gpx) "gpx" else "geojson"
+            ShareHelper.shareFile(
+                getApplication(),
+                "$stem.$extension",
+                if (gpx) "application/gpx+xml" else "application/geo+json",
+                content,
+            )
+        }.onFailure { _messages.tryEmit(it.message ?: "اشتراک‌گذاری ناموفق بود") }
+    }
+
     // ---------------------------------------------------------------- navigation
 
     fun zoomIn() = controller.zoomBy(1.0)
@@ -728,7 +1094,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val next = !_followMode.value
         _followMode.value = next
         if (next) {
-            val fix = _gps.value
+            val fix = gps.value
             if (fix != null) {
                 controller.flyTo(LatLon(fix.lat, fix.lon), max(controller.zoom(), 15.0))
             } else {
@@ -738,7 +1104,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun centerOnLocation() {
-        val fix = _gps.value
+        val fix = gps.value
         if (fix == null) {
             _messages.tryEmit("موقعیت یافت نشد؛ در فضای باز کمی صبر کنید")
             return
@@ -792,18 +1158,26 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     // ----------------------------------------------------------------- recording
 
+    /**
+     * Recording lives in an application-scoped engine kept alive by
+     * [RecordingService]; this ViewModel only mirrors it, so leaving the screen no
+     * longer ends the track.
+     */
+    private fun recordingPermissionError(): String? = when {
+        !engine.hasPermission() -> "برای ثبت مسیر، دسترسی موقعیت مکانی لازم است"
+        !engine.hasPrecisePermission() ->
+            "برای ثبت مسیر، دسترسی «دقیق» موقعیت مکانی لازم است؛ آن را از تنظیمات برنامه فعال کنید"
+        else -> null
+    }
+
     /** Prepares a recording; the GPS starts only when the user presses شروع. */
     fun armRecording() {
-        if (activeSession != null) {
+        if (engine.isActive) {
             _recordArmed.value = false
             return
         }
-        if (!locationProvider.hasPermission()) {
-            _messages.tryEmit("برای ثبت مسیر، دسترسی موقعیت مکانی لازم است")
-            return
-        }
-        if (!locationProvider.hasPrecisePermission()) {
-            _messages.tryEmit("برای ثبت مسیر، دسترسی «دقیق» موقعیت مکانی لازم است؛ آن را از تنظیمات برنامه فعال کنید")
+        recordingPermissionError()?.let { message ->
+            _messages.tryEmit(message)
             return
         }
         _measure.value = MeasureUiState()
@@ -818,82 +1192,35 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startRecording() {
-        if (activeSession != null) return
+        if (engine.isActive) return
         _recordArmed.value = false
-        if (!locationProvider.hasPermission()) {
-            _messages.tryEmit("برای ثبت مسیر، دسترسی موقعیت مکانی لازم است")
+        recordingPermissionError()?.let { message ->
+            _messages.tryEmit(message)
             return
         }
-        if (!locationProvider.hasPrecisePermission()) {
-            _messages.tryEmit("برای ثبت مسیر، دسترسی «دقیق» موقعیت مکانی لازم است؛ آن را از تنظیمات برنامه فعال کنید")
-            return
-        }
-        if (!locationProvider.locationServicesEnabled()) {
+        if (!engine.locationServicesEnabled()) {
             _messages.tryEmit("GPS دستگاه خاموش است؛ پس از روشن شدن، ثبت ادامه می‌یابد")
         }
-        val session = TrackSession(
-            id = AppDatabase.newId(),
-            name = TrackSession.newName(),
-            startedAt = System.currentTimeMillis(),
-        )
-        activeSession = session
-        _liveTrackPoints.value = emptyList()
-        _recording.value = session.snapshot()
+        if (!engine.start()) return
         _tool.value = Tool.BROWSE
         _measure.value = MeasureUiState()
         _searchFocus.value = null
-        lastPersistedAt = System.currentTimeMillis()
-        lastLivePushAt = 0L
-        locationProvider.start()
-        tickerJob?.cancel()
-        tickerJob = viewModelScope.launch {
-            while (true) {
-                delay(1000)
-                activeSession?.let { _recording.value = it.snapshot() }
-            }
-        }
+        // The service keeps the GPS alive with the screen off; without it Android
+        // freezes location updates as soon as the app leaves the foreground.
+        RecordingService.start(getApplication())
         pushOverlays()
-        _messages.tryEmit("ثبت مسیر آغاز شد")
     }
 
     fun pauseRecording() {
-        val session = activeSession ?: return
-        session.pause()
-        _recording.value = session.snapshot()
-        persistSession()
-        _messages.tryEmit("ثبت مسیر موقتاً متوقف شد")
+        engine.pause()
     }
 
     fun resumeRecording() {
-        val session = activeSession ?: return
-        session.resume()
-        _recording.value = session.snapshot()
+        engine.resume()
     }
 
     fun stopRecording() {
-        val session = activeSession ?: return
-        activeSession = null
-        tickerJob?.cancel()
-        tickerJob = null
-        if (session.pointCount < 2) {
-            _recording.value = RecordingState()
-            _liveTrackPoints.value = emptyList()
-            pushOverlays()
-            // A 15-second autosave may already have written this session. Remove it
-            // instead of leaving a stalled one-point "recording" row in the database.
-            viewModelScope.launch(Dispatchers.IO) { db.deleteTrack(session.id) }
-            _messages.tryEmit("برای ذخیره مسیر، حداقل دو نقطه لازم است")
-            return
-        }
-        val track = session.toTrack(recording = false)
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { db.upsertTrack(track) }
-            _tracks.value = withContext(Dispatchers.IO) { db.readTracks() }
-            _recording.value = RecordingState()
-            _liveTrackPoints.value = emptyList()
-            pushOverlays()
-            _messages.tryEmit("مسیر با ${track.points.size} نقطه ذخیره شد")
-        }
+        engine.stop()
     }
 
     fun renameTrack(track: Track, name: String) {
@@ -915,22 +1242,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun persistSession() {
-        val session = activeSession ?: return
-        val track = session.toTrack(recording = true)
-        viewModelScope.launch(Dispatchers.IO) {
-            // Stop may have finalised (or discarded) the session while this write was
-            // queued; never overwrite the final row with a stale recording snapshot.
-            if (activeSession === session) db.upsertTrack(track)
-        }
-    }
 
     // ------------------------------------------------------------------------ gps
 
     private fun observeGps() {
         viewModelScope.launch {
-            locationProvider.fix.collect { fix ->
-                _gps.value = fix
+            engine.gps.collect { fix ->
                 if (fix == null) return@collect
                 if (_followMode.value) {
                     controller.followTo(
@@ -938,22 +1255,34 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         controller.zoom().coerceAtLeast(14.0),
                     )
                 }
-                val session = activeSession
-                if (session != null && !session.paused) {
-                    if (session.addFix(fix)) {
-                        val now = System.currentTimeMillis()
-                        _recording.value = session.snapshot()
-                        if (now - lastLivePushAt >= 900L) {
-                            lastLivePushAt = now
-                            _liveTrackPoints.value = session.pointsForLivePreview()
-                        }
-                        if (now - lastPersistedAt >= 15_000L) {
-                            lastPersistedAt = now
-                            persistSession()
-                        }
-                    }
-                }
                 updateGpsOverlays(fix)
+                refreshNavigation(fix)
+            }
+        }
+        // The engine owns the live polyline; pushing it here keeps the drawn line in
+        // step with the notification even while the activity is paused.
+        viewModelScope.launch {
+            engine.livePoints.collect { points ->
+                controller.updateSource(
+                    MapStyleBuilder.SRC_ACTIVE_TRACK,
+                    OverlayGeoJson.line(points),
+                )
+            }
+        }
+        viewModelScope.launch {
+            engine.messages.collect { message -> _messages.tryEmit(message) }
+        }
+        viewModelScope.launch {
+            engine.savedTracks.collect {
+                _tracks.value = withContext(Dispatchers.IO) { db.readTracks() }
+                pushOverlays()
+            }
+        }
+        viewModelScope.launch {
+            compass.heading.collect { heading ->
+                _deviceHeading.value = heading
+                // Keep the arrow pointing at the target as the phone turns.
+                refreshNavigation(gps.value)
             }
         }
     }
@@ -961,24 +1290,20 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private fun updateGpsOverlays(fix: GpsFix) {
         controller.updateSource(MapStyleBuilder.SRC_GPS, OverlayGeoJson.gpsPoint(fix))
         controller.updateSource(MapStyleBuilder.SRC_GPS_ACCURACY, OverlayGeoJson.accuracyRing(fix))
-        if (_liveTrackPoints.value.isNotEmpty()) {
-            controller.updateSource(
-                MapStyleBuilder.SRC_ACTIVE_TRACK,
-                OverlayGeoJson.line(_liveTrackPoints.value),
-            )
-        }
     }
 
     fun onLocationPermissionGranted() {
-        locationProvider.start()
+        engine.startLocation()
     }
 
     fun onScreenResumed() {
-        if (locationProvider.hasPermission()) locationProvider.start()
+        if (engine.hasPermission()) engine.startLocation()
+        compass.start()
     }
 
     fun onScreenPaused() {
-        if (activeSession == null) locationProvider.stop()
+        engine.stopLocationIfIdle()
+        compass.stop()
     }
 
     // ------------------------------------------------------------ import / export
@@ -1089,14 +1414,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        tickerJob?.cancel()
-        locationProvider.stop()
-        val session = activeSession
-        activeSession = null
-        if (session != null && session.pointCount >= 2) {
-            val track = session.toTrack(recording = false)
-            Thread { runCatching { db.upsertTrack(track) } }.start()
-        }
+        compass.stop()
+        engine.stopLocationIfIdle()
         super.onCleared()
     }
 }

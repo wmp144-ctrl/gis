@@ -123,6 +123,30 @@ object OverlayGeoJson {
         return sb.toString()
     }
 
+    /**
+     * Guidance geometry: either the remaining part of a followed track (`role=route`) or
+     * the direct bearing from the user to a single target (`role=direct`).
+     */
+    fun navigation(from: LatLon?, target: LatLon?, route: List<LatLon>): String {
+        val line = when {
+            route.size >= 2 -> route
+            from != null && target != null -> listOf(from, target)
+            else -> emptyList()
+        }
+        if (line.size < 2) return empty()
+        val role = if (route.size >= 2) "route" else "direct"
+        val sb = StringBuilder(1024)
+        sb.append("{\"type\":\"FeatureCollection\",\"features\":[")
+        sb.append("{\"type\":\"Feature\",\"properties\":{\"role\":\"").append(role).append("\"},")
+        sb.append("\"geometry\":{\"type\":\"LineString\",\"coordinates\":[")
+        line.forEachIndexed { index, point ->
+            if (index > 0) sb.append(',')
+            appendPosition(sb, point.lon, point.lat)
+        }
+        sb.append("]}}]}")
+        return sb.toString()
+    }
+
     /** Approximate accuracy circle as a geodesic polygon (48 vertices). */
     fun accuracyRing(fix: GpsFix?): String {
         if (fix == null || fix.accuracyMeters <= 0f) return empty()
